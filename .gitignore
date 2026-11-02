@@ -1,0 +1,32 @@
+# Compilación .NET / Visual Studio
+[Bb]in/
+[Oo]bj/
+.vs/
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+TestResults/
+
+# Carpetas de publicación e instaladores compilados (se distribuyen en GitHub Releases)
+publish/
+dist/
+Output/
+installer/Output/
+*-Setup.exe
+*.msi
+
+# Manuales locales en PDF excluidos del repositorio
+Manual_Funcionamiento_BUSCAPP.pdf
+*.pdf
+
+# Datos locales de sesión en caso de generarse en el directorio de trabajo
+paginas_guardadas.json
+nsfw_categorias.json
+configuracion.json
+historial_busquedas.json
+
+# Archivos temporales del sistema
+Thumbs.db
+Desktop.ini
+.DS_Store

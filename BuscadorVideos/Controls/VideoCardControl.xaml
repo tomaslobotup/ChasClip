@@ -1,0 +1,186 @@
+<UserControl x:Class="BuscadorVideos.Controls.VideoCardControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             Cursor="Hand"
+             MouseEnter="Card_MouseEnter"
+             MouseLeave="Card_MouseLeave"
+             MouseLeftButtonUp="Card_MouseLeftButtonUp"
+             Unloaded="Card_Unloaded">
+
+    <Border x:Name="CardBorder"
+            Margin="7"
+            Background="#151927"
+            BorderBrush="#252B40"
+            BorderThickness="1.5"
+            CornerRadius="12"
+            RenderTransformOrigin="0.5,0.5">
+        <Border.RenderTransform>
+            <ScaleTransform x:Name="CardScale" ScaleX="1.0" ScaleY="1.0"/>
+        </Border.RenderTransform>
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.38"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Contenedor 16:9 de Portada y Vista Previa al pasar el mouse -->
+            <Border Grid.Row="0"
+                    CornerRadius="10,10,0,0"
+                    Background="#0B0E17"
+                    ClipToBounds="True">
+                <Grid>
+                    <!-- Espaciador proporcional 16:9 -->
+                    <Viewbox Stretch="Uniform">
+                        <Border Width="320" Height="180" Background="Transparent"/>
+                    </Viewbox>
+
+                    <!-- Fondo ambiental difuminado (ideal para videos verticales como TikTok) -->
+                    <Image x:Name="BackdropCoverImage"
+                           Stretch="UniformToFill"
+                           Opacity="0.32"
+                           RenderOptions.BitmapScalingMode="LowQuality">
+                        <Image.Effect>
+                            <BlurEffect Radius="18"/>
+                        </Image.Effect>
+                    </Image>
+
+                    <!-- Placeholder mientras carga la portada -->
+                    <StackPanel x:Name="PlaceholderPanel"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                        <TextBlock x:Name="PlaceholderIcon"
+                                   Text="🎬"
+                                   FontSize="28"
+                                   Opacity="0.45"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="PlaceholderSubtext"
+                                   Text=""
+                                   Foreground="#6D7794"
+                                   FontSize="10.5"
+                                   Margin="0,4,0,0"
+                                   HorizontalAlignment="Center"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+
+                    <!-- Portada principal estática -->
+                    <Image x:Name="CoverImage"
+                           Stretch="Uniform"
+                           Opacity="0"
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           RenderTransformOrigin="0.5,0.5">
+                        <Image.RenderTransform>
+                            <ScaleTransform x:Name="CoverZoomTransform" ScaleX="1.0" ScaleY="1.0"/>
+                        </Image.RenderTransform>
+                    </Image>
+
+                    <!-- Capa de Preview por fotogramas (WebP animado / Filmstrip / Escenas) -->
+                    <Image x:Name="PreviewFrameImage"
+                           Stretch="Uniform"
+                           Visibility="Collapsed"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+
+                    <!-- Capa de Preview de Video MP4 silencioso (TikTok, Vimeo, sitios web) -->
+                    <MediaElement x:Name="PreviewMediaElement"
+                                  LoadedBehavior="Manual"
+                                  UnloadedBehavior="Stop"
+                                  IsMuted="True"
+                                  Stretch="Uniform"
+                                  Visibility="Collapsed"
+                                  MediaOpened="PreviewMediaElement_MediaOpened"
+                                  MediaEnded="PreviewMediaElement_MediaEnded"
+                                  MediaFailed="PreviewMediaElement_MediaFailed"/>
+
+                    <!-- Etiqueta de página origen (arriba izquierda) -->
+                    <Border x:Name="SiteBadgeBorder"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Margin="8"
+                            Padding="8,3"
+                            CornerRadius="6"
+                            Background="#D20E121D"
+                            BorderThickness="1"
+                            BorderBrush="#3AFFFFFF">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Ellipse x:Name="SiteAccentDot" Width="7" Height="7" Fill="#7C5CFF" Margin="0,0,5,0"/>
+                            <TextBlock x:Name="SiteBadgeText"
+                                       Text="Sitio"
+                                       Foreground="#F5F6FA"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Indicador activo de Preview al pasar el mouse (arriba derecha) -->
+                    <Border x:Name="PreviewStatusBadge"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Top"
+                            Margin="8"
+                            Padding="8,3"
+                            CornerRadius="6"
+                            Background="#DD7C5CFF"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="PreviewStatusText"
+                                   Text="▶ PREVIEW"
+                                   Foreground="White"
+                                   FontSize="10.5"
+                                   FontWeight="Bold"/>
+                    </Border>
+
+                    <!-- Duración del video (abajo derecha) -->
+                    <Border x:Name="DurationBadge"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            Margin="8"
+                            Padding="6,2"
+                            CornerRadius="5"
+                            Background="#E00A0C14"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="DurationText"
+                                   Foreground="#ECEEF5"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"/>
+                    </Border>
+
+                    <!-- Barra de progreso de la vista previa (borde inferior de la portada) -->
+                    <ProgressBar x:Name="PreviewProgressBar"
+                                 VerticalAlignment="Bottom"
+                                 Height="3"
+                                 Minimum="0"
+                                 Maximum="100"
+                                 Value="0"
+                                 BorderThickness="0"
+                                 Background="#33000000"
+                                 Foreground="#00E5D4"
+                                 Visibility="Collapsed"/>
+                </Grid>
+            </Border>
+
+            <!-- Nombre del video abajo tal cual en su idioma original -->
+            <StackPanel Grid.Row="1" Margin="12,9,12,11">
+                <TextBlock x:Name="TitleTextBlock"
+                           Foreground="#F2F4FA"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           FontFamily="Segoe UI, Segoe UI Emoji, Yu Gothic UI, Malgun Gothic, Microsoft YaHei UI"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           LineHeight="18.5"
+                           Height="37"/>
+
+                <TextBlock x:Name="SubtitleTextBlock"
+                           Margin="0,4,0,0"
+                           Foreground="#8B93A8"
+                           FontSize="11.5"
+                           FontFamily="Segoe UI, Segoe UI Emoji, Yu Gothic UI, Malgun Gothic, Microsoft YaHei UI"
+                           TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>
