@@ -269,6 +269,19 @@ public partial class MainWindow : Window, IBrowserScraper
                 return;
             }
 
+            // Inyectar Referer en solicitudes a Dailymotion para evitar bloqueo 403 Forbidden
+            if (uri.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (!args.Request.Headers.Contains("Referer") || string.IsNullOrWhiteSpace(args.Request.Headers.GetHeader("Referer")))
+                    {
+                        args.Request.Headers.SetHeader("Referer", "https://www.dailymotion.com/");
+                    }
+                }
+                catch { }
+            }
+
             if (sniffMediaStreams &&
                 (uri.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
                  uri.Contains(".mp4", StringComparison.OrdinalIgnoreCase) ||
@@ -1209,7 +1222,24 @@ public partial class MainWindow : Window, IBrowserScraper
             PlayerLoadingMask.Visibility = Visibility.Visible;
             PlayerWebView.Margin = new Thickness(-5000, -5000, 0, 0);
             PlayerModalOverlay.Visibility = Visibility.Visible;
-            PlayerWebView.CoreWebView2.Navigate(targetUrl);
+
+            if (targetUrl.Contains("geo.dailymotion.com", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var req = _webViewEnv?.CreateWebResourceRequest(targetUrl, "GET", Stream.Null, "Referer: https://www.dailymotion.com/\r\n")
+                              ?? PlayerWebView.CoreWebView2.Environment.CreateWebResourceRequest(targetUrl, "GET", Stream.Null, "Referer: https://www.dailymotion.com/\r\n");
+                    PlayerWebView.CoreWebView2.NavigateWithWebResourceRequest(req);
+                }
+                catch
+                {
+                    PlayerWebView.CoreWebView2.Navigate(targetUrl);
+                }
+            }
+            else
+            {
+                PlayerWebView.CoreWebView2.Navigate(targetUrl);
+            }
         }
         else
         {
@@ -1254,7 +1284,7 @@ public partial class MainWindow : Window, IBrowserScraper
             {
                 if (_activePlayerVideo != currentVideo) return;
                 var found = await wv.ExecuteScriptAsync(
-                    "Boolean(document.querySelector('video, #movie_player, .html5-video-player, .jwplayer, .video-js, .fluid_video_wrapper, .plyr, iframe[src*=\"embed\"], iframe[src*=\"player\"], iframe[src*=\"tiktok.com/player\"], iframe[src*=\"bilibili.com/player\"]'))");
+                    "Boolean(document.querySelector('video, #movie_player, .html5-video-player, .jwplayer, .video-js, .fluid_video_wrapper, .plyr, shreddit-player, iframe[src*=\"embed\"], iframe[src*=\"player\"], iframe[src*=\"tiktok.com/player\"], iframe[src*=\"bilibili.com/player\"]'))");
                 if (found == "true") break;
                 await Task.Delay(250);
             }
@@ -1340,7 +1370,16 @@ public partial class MainWindow : Window, IBrowserScraper
                 var nextDmUrl = $"{baseDmUrl}&quality={dmQ}";
                 if (!string.Equals(currentSrc, nextDmUrl, StringComparison.OrdinalIgnoreCase))
                 {
-                    PlayerWebView.CoreWebView2.Navigate(nextDmUrl);
+                    try
+                    {
+                        var req = _webViewEnv?.CreateWebResourceRequest(nextDmUrl, "GET", Stream.Null, "Referer: https://www.dailymotion.com/\r\n")
+                                  ?? PlayerWebView.CoreWebView2.Environment.CreateWebResourceRequest(nextDmUrl, "GET", Stream.Null, "Referer: https://www.dailymotion.com/\r\n");
+                        PlayerWebView.CoreWebView2.NavigateWithWebResourceRequest(req);
+                    }
+                    catch
+                    {
+                        PlayerWebView.CoreWebView2.Navigate(nextDmUrl);
+                    }
                     return;
                 }
             }
@@ -1392,6 +1431,7 @@ public partial class MainWindow : Window, IBrowserScraper
         PlayerDownloadStatusText.Text = $"Preparando descarga ({selectedQuality.Label})...";
         PlayerDownloadBarBorder.Visibility = Visibility.Visible;
 
+        string? cookieFile = null;
         try
         {
             string? pageCookies = null;
@@ -1399,6 +1439,7 @@ public partial class MainWindow : Window, IBrowserScraper
             {
                 var currentSrc = PlayerWebView.Source?.ToString() ?? video.VideoPageUrl;
                 pageCookies = await GetCookiesHeaderForUrlAsync(PlayerWebView.CoreWebView2, currentSrc);
+                cookieFile = await ExportNetscapeCookieFileAsync(PlayerWebView.CoreWebView2, currentSrc);
 
                 // Refrescar detección de streams por si el reproductor cargó HLS tras iniciar reproducción
                 if (_activeVideoStreams.Count == 0)
@@ -1428,7 +1469,8 @@ public partial class MainWindow : Window, IBrowserScraper
                 sfd.FileName,
                 pageCookies,
                 progress,
-                cts.Token);
+                cts.Token,
+                cookieFilePath: cookieFile);
 
             PlayerDownloadProgressBar.Value = 100;
             PlayerDownloadStatusText.Text = $"✓ Guardado en {Path.GetFileName(sfd.FileName)}";
@@ -1445,12 +1487,16 @@ public partial class MainWindow : Window, IBrowserScraper
             MessageBox.Show(
                 this,
                 ex.Message,
-                "Video no compatible para descarga directa",
+                "Aviso de descarga",
                 MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MessageBoxImage.Information);
         }
         finally
         {
+            if (cookieFile != null && File.Exists(cookieFile))
+            {
+                try { File.Delete(cookieFile); } catch { }
+            }
             if (_downloadCts == cts)
                 DownloadVideoButton.IsEnabled = true;
         }
@@ -1471,6 +1517,51 @@ public partial class MainWindow : Window, IBrowserScraper
                 return null;
 
             return string.Join("; ", cookies.Select(c => $"{c.Name}={c.Value}"));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<string?> ExportNetscapeCookieFileAsync(CoreWebView2? wv, string url)
+    {
+        if (wv == null || string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+
+        try
+        {
+            var cookies = await wv.CookieManager.GetCookiesAsync(url);
+            if (cookies == null || cookies.Count == 0)
+                return null;
+
+            var tempPath = Path.Combine(Path.GetTempPath(), $"buscapp_wv_c_{Guid.NewGuid():N}.txt");
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# Netscape HTTP Cookie File");
+            sb.AppendLine("# Generated by BUSCAPP");
+
+            foreach (var c in cookies)
+            {
+                var dom = c.Domain ?? "";
+                if (string.IsNullOrWhiteSpace(dom))
+                    dom = "." + uri.Host;
+                var sub = dom.StartsWith(".") ? "TRUE" : "FALSE";
+                var p = string.IsNullOrEmpty(c.Path) ? "/" : c.Path;
+                var sec = c.IsSecure ? "TRUE" : "FALSE";
+                long exp = 2147483647;
+                try
+                {
+                    if (c.Expires != DateTime.MinValue)
+                        exp = new DateTimeOffset(c.Expires.ToUniversalTime()).ToUnixTimeSeconds();
+                }
+                catch { }
+                if (exp <= 0) exp = 2147483647;
+
+                sb.AppendLine($"{dom}\t{sub}\t{p}\t{sec}\t{exp}\t{c.Name}\t{c.Value}");
+            }
+
+            await File.WriteAllTextAsync(tempPath, sb.ToString(), System.Text.Encoding.ASCII);
+            return tempPath;
         }
         catch
         {
@@ -1544,6 +1635,35 @@ public partial class MainWindow : Window, IBrowserScraper
             return document.querySelector('#movie_player, video') ? 'YOUTUBE_ISOLATED' : 'INCOMPATIBLE';
         }
 
+        // 1.5) Aislamiento nativo para Reddit (web component shreddit-player)
+        if (host.includes('reddit.com')) {
+            document.querySelectorAll('reddit-header-large, #bottom-sheet, #overlay-container, shreddit-async-loader, shreddit-comment-tree, aside, footer').forEach(e => {
+                try { e.remove(); } catch(err) {}
+            });
+            const sp = document.querySelector('shreddit-player');
+            if (sp) {
+                let st = document.getElementById('buscapp-reddit-clean');
+                if (!st) {
+                    st = document.createElement('style');
+                    st.id = 'buscapp-reddit-clean';
+                    st.textContent = `
+                        html, body { margin:0 !important; padding:0 !important; background:#000 !important; overflow:hidden !important; width:100vw !important; height:100vh !important; }
+                        reddit-header-large, #bottom-sheet, #overlay-container, shreddit-async-loader, shreddit-comment-tree, aside, footer { display:none !important; }
+                        shreddit-player { position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; z-index:2147483647 !important; background:#000 !important; }
+                    `;
+                    document.head.appendChild(st);
+                }
+                const vid = sp.querySelector('video') || (sp.shadowRoot ? sp.shadowRoot.querySelector('video') : null);
+                if (vid) {
+                    vid.style.setProperty('width', '100vw', 'important');
+                    vid.style.setProperty('height', '100vh', 'important');
+                    vid.style.setProperty('object-fit', 'contain', 'important');
+                    vid.play().catch(() => {});
+                }
+                return 'REDDIT_ISOLATED';
+            }
+        }
+
         // 2) Si existe un <video> con archivo directo MP4/WebM (no blob:), montar reproductor HTML5 limpio conservando origen y cookies
         const vids = Array.from(document.querySelectorAll('video'));
         let directSrc = '';
@@ -1588,9 +1708,9 @@ public partial class MainWindow : Window, IBrowserScraper
             return 'DIRECT_PLAYER';
         }
 
-        // 3) Para reproductores MSE/HLS (blob:, JWPlayer, Video.js, FluidPlayer, Plyr o iframe player):
+        // 3) Para reproductores MSE/HLS (blob:, JWPlayer, Video.js, FluidPlayer, Plyr, shreddit-player o iframe player):
         const target =
-            document.querySelector('#movie_player, .html5-video-player, .jwplayer, .video-js, .fluid_video_wrapper, .plyr') ||
+            document.querySelector('#movie_player, .html5-video-player, .jwplayer, .video-js, .fluid_video_wrapper, .plyr, shreddit-player') ||
             document.querySelector('video') ||
             document.querySelector('iframe[src*=""embed""], iframe[src*=""player""], iframe[src*=""video""]');
 

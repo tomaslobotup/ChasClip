@@ -13,7 +13,7 @@ public class QualityOption
 
     public static IReadOnlyList<QualityOption> DefaultOptions { get; } =
     [
-        new() { Label = "Automática (Mejor)", TargetHeight = 0, YouTubeQualityCode = "hd1080" },
+        new() { Label = "Automática (Mejor)", TargetHeight = 0, YouTubeQualityCode = "default" },
         new() { Label = "1080p Full HD", TargetHeight = 1080, YouTubeQualityCode = "hd1080" },
         new() { Label = "720p HD", TargetHeight = 720, YouTubeQualityCode = "hd720" },
         new() { Label = "480p SD", TargetHeight = 480, YouTubeQualityCode = "large" },

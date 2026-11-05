@@ -40,7 +40,6 @@ public class VideoQualityAndDownloadService
 
     private readonly string _toolsDir;
     private string? _cachedFfmpegPath;
-    private bool _ffmpegSearched;
 
     public VideoQualityAndDownloadService()
     {
@@ -70,15 +69,38 @@ public class VideoQualityAndDownloadService
     };
 
     try {
-        // 1) Etiquetas <video> y <source>
-        document.querySelectorAll('video').forEach(v => {
-            if (v.currentSrc) add(v.currentSrc, v.videoHeight || 0, false);
-            if (v.src) add(v.src, v.videoHeight || 0, false);
-            v.querySelectorAll('source').forEach(s => {
-                const q = s.getAttribute('res') || s.getAttribute('size') || s.getAttribute('label') || s.getAttribute('data-quality') || s.getAttribute('title') || '0';
-                const m = String(q).match(/(2160|1440|1080|720|480|360|240)/);
-                add(s.src || s.getAttribute('src'), m ? m[1] : 0, (s.type || '').includes('mpegurl'));
-            });
+        // 1) Etiquetas <video> y <source> (DOM principal y Shadow DOM de web components)
+        const scanRoot = (root) => {
+            if (!root) return;
+            try {
+                root.querySelectorAll('video').forEach(v => {
+                    if (v.currentSrc) add(v.currentSrc, v.videoHeight || 0, false);
+                    if (v.src) add(v.src, v.videoHeight || 0, false);
+                    v.querySelectorAll('source').forEach(s => {
+                        const q = s.getAttribute('res') || s.getAttribute('size') || s.getAttribute('label') || s.getAttribute('data-quality') || s.getAttribute('title') || '0';
+                        const m = String(q).match(/(2160|1440|1080|720|480|360|240)/);
+                        add(s.src || s.getAttribute('src'), m ? m[1] : 0, (s.type || '').includes('mpegurl'));
+                    });
+                });
+                root.querySelectorAll('*').forEach(el => {
+                    if (el.shadowRoot) scanRoot(el.shadowRoot);
+                });
+            } catch(e) {}
+        };
+        scanRoot(document);
+
+        // 2) Reddit <shreddit-player> y sus propiedades / JSON
+        document.querySelectorAll('shreddit-player').forEach(sp => {
+            const streamUrl = sp.getAttribute('stream-url') || sp.getAttribute('src');
+            if (streamUrl) add(streamUrl, 0, streamUrl.includes('.m3u8'));
+            const pkg = sp.getAttribute('packaged-media-json');
+            if (pkg) {
+                try {
+                    const parsed = JSON.parse(pkg);
+                    if (parsed.playbackMp4Url) add(parsed.playbackMp4Url.url, parsed.playbackMp4Url.height || 0, false);
+                    if (parsed.playbackHlsUrl) add(parsed.playbackHlsUrl.url, 0, true);
+                } catch(e) {}
+            }
         });
 
         // 2) XVideos / XNXX html5player
@@ -300,10 +322,16 @@ public class VideoQualityAndDownloadService
 
         // 1) YouTube (#movie_player API oficial interna)
         const ytPlayer = document.getElementById('movie_player');
-        if (ytPlayer && typeof ytPlayer.setPlaybackQualityRange === 'function') {{
-            ytPlayer.setPlaybackQualityRange(ytQ, ytQ);
-            if (typeof ytPlayer.setPlaybackQuality === 'function') ytPlayer.setPlaybackQuality(ytQ);
-            return 'YOUTUBE_QUALITY_SET';
+        if (ytPlayer) {{
+            if (targetH <= 0) {{
+                if (typeof ytPlayer.setPlaybackQualityRange === 'function') ytPlayer.setPlaybackQualityRange('default', 'highres');
+                if (typeof ytPlayer.setPlaybackQuality === 'function') ytPlayer.setPlaybackQuality('default');
+                return 'YOUTUBE_AUTO_SET';
+            }} else {{
+                if (typeof ytPlayer.setPlaybackQualityRange === 'function') ytPlayer.setPlaybackQualityRange(ytQ, ytQ);
+                if (typeof ytPlayer.setPlaybackQuality === 'function') ytPlayer.setPlaybackQuality(ytQ);
+                return 'YOUTUBE_QUALITY_SET';
+            }}
         }}
 
         // 2) JWPlayer
@@ -357,7 +385,7 @@ public class VideoQualityAndDownloadService
     /// Descarga el video en la calidad seleccionada por el usuario combinando:
     /// Nivel 1: MP4/WebM directo autenticado con cookies de sesión.
     /// Nivel 2: Variante HLS (.m3u8) de la resolución elegida mediante FFmpeg o ensamblador TS/AES-128 nativo en C#.
-    /// Nivel 3: Motor universal yt-dlp + FFmpeg (para YouTube DASH 1080p/720p/480p, TikTok, Vimeo, Bilibili, Reddit, Rumble, etc.).
+    /// Nivel 3: Motor universal yt-dlp + FFmpeg (para YouTube DASH 1080p/720p/480p, TikTok, Vimeo, Bilibili, Reddit, Dailymotion, Rumble, etc.).
     /// </summary>
     public async Task DownloadVideoAsync(
         VideoResult video,
@@ -366,12 +394,13 @@ public class VideoQualityAndDownloadService
         string destinationPath,
         string? pageCookies,
         IProgress<(double Percent, string Status)> progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? cookieFilePath = null)
     {
         bool preferYtDlpFirst = IsPlatformRequiringUniversalExtractor(video.VideoPageUrl);
         var bestStream = SelectBestStreamForQuality(discoveredStreams, selectedQuality.TargetHeight);
 
-        // Si NO es una plataforma DASH/cifrada (como YouTube/TikTok/Bilibili/Reddit) y tenemos stream directo/HLS de esa calidad:
+        // Si NO es una plataforma DASH/cifrada (como YouTube/TikTok/Bilibili/Reddit/Dailymotion) y tenemos stream directo/HLS:
         if (!preferYtDlpFirst && bestStream != null)
         {
             try
@@ -422,7 +451,7 @@ public class VideoQualityAndDownloadService
         // Nivel 3: Motor universal yt-dlp (con soporte FFmpeg para unir video+audio en la resolución elegida)
         try
         {
-            await DownloadWithYtDlpAsync(video, selectedQuality, destinationPath, pageCookies, progress, ct);
+            await DownloadWithYtDlpAsync(video, selectedQuality, destinationPath, pageCookies, cookieFilePath, progress, ct);
             if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length > 10_000)
                 return;
         }
@@ -435,22 +464,46 @@ public class VideoQualityAndDownloadService
         {
             TryDeletePartialFile(destinationPath);
 
-            // Último intento: si era plataforma preferYtDlpFirst pero teníamos un bestStream detectado en el DOM
-            if (preferYtDlpFirst && bestStream is { IsHls: false })
+            // Reintento 1: Si falló la URL principal pero capturamos un stream directo/HLS en WebView2 (ej. Reddit v.redd.it o Dailymotion m3u8)
+            if (bestStream != null && !string.IsNullOrWhiteSpace(bestStream.Url))
             {
-                var byteProgress = new Progress<double>(p => progress.Report((p, $"Descargando: {p:0}%")));
-                await HttpHelper.DownloadFileWithProgressAsync(
-                    bestStream.Url,
-                    destinationPath,
-                    bestStream.Referer ?? video.VideoPageUrl,
-                    bestStream.Cookies ?? pageCookies,
-                    byteProgress,
-                    ct);
-                return;
+                try
+                {
+                    progress.Report((5, "Intentando descarga vía flujo multimedia directo..."));
+                    await DownloadWithYtDlpAsync(video, selectedQuality, destinationPath, pageCookies, cookieFilePath, progress, ct, overrideUrl: bestStream.Url);
+                    if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length > 10_000)
+                        return;
+                }
+                catch { TryDeletePartialFile(destinationPath); }
+
+                // Reintento 2: Descarga HLS nativa o MP4 directa
+                try
+                {
+                    if (bestStream.IsHls)
+                    {
+                        bool hlsOk = await DownloadHlsVariantAsync(bestStream, destinationPath, pageCookies, progress, ct);
+                        if (hlsOk && File.Exists(destinationPath) && new FileInfo(destinationPath).Length > 10_000)
+                            return;
+                    }
+                    else
+                    {
+                        var byteProgress = new Progress<double>(p => progress.Report((p, $"Descargando: {p:0}%")));
+                        await HttpHelper.DownloadFileWithProgressAsync(
+                            bestStream.Url,
+                            destinationPath,
+                            bestStream.Referer ?? video.VideoPageUrl,
+                            bestStream.Cookies ?? pageCookies,
+                            byteProgress,
+                            ct);
+                        if (File.Exists(destinationPath) && new FileInfo(destinationPath).Length > 10_000)
+                            return;
+                    }
+                }
+                catch { TryDeletePartialFile(destinationPath); }
             }
 
-            throw new InvalidOperationException(
-                $"No fue posible descargar este video en la calidad seleccionada ({selectedQuality.Label}). El sitio puede usar cifrado DRM o bloquear la descarga directa. Detalle: {ex.Message}");
+            var friendlyMessage = HumanizeDownloadErrorMessage(ex.Message, selectedQuality);
+            throw new InvalidOperationException(friendlyMessage);
         }
     }
 
@@ -607,22 +660,27 @@ public class VideoQualityAndDownloadService
         QualityOption selectedQuality,
         string destinationPath,
         string? pageCookies,
+        string? cookieFilePath,
         IProgress<(double Percent, string Status)> progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? overrideUrl = null)
     {
         var ytDlpPath = await EnsureYtDlpExecutableAsync(progress, ct);
-        var ffmpegPath = FindFfmpegExecutable();
+        var ffmpegPath = await EnsureFfmpegExecutableAsync(progress, ct);
 
         int h = selectedQuality.TargetHeight;
-        string formatSelector = h > 0
-            ? $"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<={h}]+bestaudio/best[height<={h}][ext=mp4]/best[height<={h}]/best"
-            : "bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best";
+        string formatSelector;
 
-        // Si no hay FFmpeg en el equipo, pedir formato progresivo combinado (con audio incluido)
-        if (string.IsNullOrWhiteSpace(ffmpegPath))
+        if (!string.IsNullOrWhiteSpace(ffmpegPath))
         {
             formatSelector = h > 0
-                ? $"best[height<={h}][ext=mp4]/best[height<={h}]/best[ext=mp4]/best"
+                ? $"bestvideo[height<={h}]+bestaudio/bestvideo+bestaudio/best[height<={h}]/best"
+                : "bestvideo+bestaudio/best";
+        }
+        else
+        {
+            formatSelector = h > 0
+                ? $"best[height<={h}][ext=mp4]/best[height<={h}]/best"
                 : "best[ext=mp4]/best";
         }
 
@@ -644,8 +702,15 @@ public class VideoQualityAndDownloadService
         psi.ArgumentList.Add("--no-warnings");
         psi.ArgumentList.Add("--user-agent");
         psi.ArgumentList.Add(HttpHelper.BrowserUserAgent);
+
+        var targetUrl = !string.IsNullOrWhiteSpace(overrideUrl) ? overrideUrl : video.VideoPageUrl;
         psi.ArgumentList.Add("--referer");
-        psi.ArgumentList.Add(video.VideoPageUrl);
+        psi.ArgumentList.Add(targetUrl.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase)
+            ? "https://www.dailymotion.com/"
+            : (targetUrl.Contains("reddit.com", StringComparison.OrdinalIgnoreCase) || targetUrl.Contains("v.redd.it", StringComparison.OrdinalIgnoreCase)
+                ? "https://www.reddit.com/"
+                : targetUrl));
+
         psi.ArgumentList.Add("-f");
         psi.ArgumentList.Add(formatSelector);
 
@@ -657,69 +722,105 @@ public class VideoQualityAndDownloadService
             psi.ArgumentList.Add("mp4");
         }
 
-        if (!string.IsNullOrWhiteSpace(pageCookies))
+        string? generatedCookieFile = null;
+        try
         {
-            psi.ArgumentList.Add("--add-header");
-            psi.ArgumentList.Add($"Cookie:{pageCookies}");
-        }
-
-        psi.ArgumentList.Add("-o");
-        psi.ArgumentList.Add(destinationPath);
-        psi.ArgumentList.Add(video.VideoPageUrl);
-
-        progress.Report((4, $"Iniciando descarga en {selectedQuality.Label}..."));
-
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("No se pudo iniciar el proceso de descarga.");
-
-        await using var reg = ct.Register(() => { try { proc.Kill(true); } catch { } });
-
-        var errSb = new StringBuilder();
-        var stdoutTask = Task.Run(async () =>
-        {
-            while (!proc.StandardOutput.EndOfStream && !ct.IsCancellationRequested)
+            string? effectiveCookieFile = cookieFilePath;
+            if (string.IsNullOrWhiteSpace(effectiveCookieFile) && !string.IsNullOrWhiteSpace(pageCookies))
             {
-                var line = await proc.StandardOutput.ReadLineAsync(ct);
-                if (string.IsNullOrWhiteSpace(line)) continue;
-
-                var m = YtDlpPercentRegex.Match(line);
-                if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
-                {
-                    progress.Report((pct, $"Descargando ({selectedQuality.Label}): {pct:0.0}%"));
-                }
-                else if (line.Contains("[Merger]", StringComparison.OrdinalIgnoreCase))
-                {
-                    progress.Report((98, "Uniendo audio y video en MP4..."));
-                }
+                generatedCookieFile = CreateNetscapeCookieFileFromHeader(pageCookies, targetUrl);
+                effectiveCookieFile = generatedCookieFile;
             }
-        }, ct);
 
-        var stderrTask = Task.Run(async () =>
-        {
-            while (!proc.StandardError.EndOfStream && !ct.IsCancellationRequested)
+            if (!string.IsNullOrWhiteSpace(effectiveCookieFile) && File.Exists(effectiveCookieFile))
             {
-                var line = await proc.StandardError.ReadLineAsync(ct);
-                if (!string.IsNullOrWhiteSpace(line))
+                psi.ArgumentList.Add("--cookies");
+                psi.ArgumentList.Add(effectiveCookieFile);
+            }
+
+            psi.ArgumentList.Add("-o");
+            psi.ArgumentList.Add(destinationPath);
+            psi.ArgumentList.Add(targetUrl);
+
+            progress.Report((4, $"Iniciando descarga en {selectedQuality.Label}..."));
+
+            using var proc = Process.Start(psi)
+                ?? throw new InvalidOperationException("No se pudo iniciar el proceso de descarga.");
+
+            await using var reg = ct.Register(() => { try { proc.Kill(true); } catch { } });
+
+            var errSb = new StringBuilder();
+            var stdoutTask = Task.Run(async () =>
+            {
+                while (!proc.StandardOutput.EndOfStream && !ct.IsCancellationRequested)
+                {
+                    var line = await proc.StandardOutput.ReadLineAsync(ct);
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    var m = YtDlpPercentRegex.Match(line);
+                    if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
+                    {
+                        progress.Report((pct, $"Descargando ({selectedQuality.Label}): {pct:0.0}%"));
+                    }
+                    else if (line.Contains("[Merger]", StringComparison.OrdinalIgnoreCase))
+                    {
+                        progress.Report((98, "Uniendo audio y video en MP4..."));
+                    }
+                }
+            }, ct);
+
+            var stderrTask = Task.Run(async () =>
+            {
+                while (!proc.StandardError.EndOfStream && !ct.IsCancellationRequested)
+                {
+                    var line = await proc.StandardError.ReadLineAsync(ct);
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    // Filtrar advertencias benignas de yt-dlp para no alarmar al usuario
+                    if (line.StartsWith("WARNING:", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("Deprecated Feature", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("Función obsoleta", StringComparison.OrdinalIgnoreCase) ||
+                        line.Contains("JavaScript runtime", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
                     errSb.AppendLine(line);
+                }
+            }, ct);
+
+            await proc.WaitForExitAsync(ct);
+            try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
+
+            if (proc.ExitCode != 0 && (!File.Exists(destinationPath) || new FileInfo(destinationPath).Length < 1000))
+            {
+                var errMsg = errSb.ToString().Trim();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(errMsg) ? $"Código de salida {proc.ExitCode}" : errMsg);
             }
-        }, ct);
 
-        await proc.WaitForExitAsync(ct);
-        try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
-
-        if (proc.ExitCode != 0 && !File.Exists(destinationPath))
-        {
-            var errMsg = errSb.ToString().Trim();
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errMsg) ? $"Código de salida {proc.ExitCode}" : errMsg);
+            progress.Report((100, "¡Descarga completada!"));
         }
-
-        progress.Report((100, "¡Descarga completada!"));
+        finally
+        {
+            if (generatedCookieFile != null && File.Exists(generatedCookieFile))
+            {
+                try { File.Delete(generatedCookieFile); } catch { }
+            }
+        }
     }
 
     private async Task<string> EnsureYtDlpExecutableAsync(
         IProgress<(double Percent, string Status)> progress,
         CancellationToken ct)
     {
+        // 0) Carpeta de instalación de la aplicación
+        var appBase = AppDomain.CurrentDomain.BaseDirectory;
+        var inAppTools = Path.Combine(appBase, "Tools", "yt-dlp.exe");
+        if (File.Exists(inAppTools)) return inAppTools;
+
+        var inAppBase = Path.Combine(appBase, "yt-dlp.exe");
+        if (File.Exists(inAppBase)) return inAppBase;
+
         // 1) Buscar en carpeta local de herramientas
         var localTool = Path.Combine(_toolsDir, "yt-dlp.exe");
         if (File.Exists(localTool) && new FileInfo(localTool).Length > 1_000_000)
@@ -742,18 +843,89 @@ public class VideoQualityAndDownloadService
         return localTool;
     }
 
+    public async Task<string?> EnsureFfmpegExecutableAsync(
+        IProgress<(double Percent, string Status)>? progress,
+        CancellationToken ct)
+    {
+        var existing = FindFfmpegExecutable();
+        if (!string.IsNullOrWhiteSpace(existing))
+            return existing;
+
+        var localTool = Path.Combine(_toolsDir, "ffmpeg.exe");
+        if (File.Exists(localTool) && new FileInfo(localTool).Length > 1_000_000)
+        {
+            _cachedFfmpegPath = localTool;
+            return localTool;
+        }
+
+        try
+        {
+            progress?.Report((2, "Configurando códecs de video (1ª vez)..."));
+            const string ffmpegZipUrl = "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
+            var tempZip = Path.Combine(_toolsDir, "ffmpeg_download.tmp");
+
+            var dlProgress = new Progress<double>(p =>
+                progress?.Report((Math.Clamp(p * 0.20, 2, 20), $"Descargando soporte HD ({p:0}%)...")));
+
+            await HttpHelper.DownloadFileWithProgressAsync(ffmpegZipUrl, tempZip, null, null, dlProgress, ct);
+
+            progress?.Report((21, "Instalando soporte HD..."));
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(tempZip))
+            {
+                var entry = zip.Entries.FirstOrDefault(e => e.Name.Equals("ffmpeg.exe", StringComparison.OrdinalIgnoreCase));
+                if (entry != null)
+                {
+                    using var entryStream = entry.Open();
+                    using var outFs = File.Create(localTool);
+                    entryStream.CopyTo(outFs);
+                }
+            }
+
+            try { File.Delete(tempZip); } catch { }
+
+            if (File.Exists(localTool))
+            {
+                _cachedFfmpegPath = localTool;
+                return localTool;
+            }
+        }
+        catch
+        {
+            // Continuar con lo disponible
+        }
+
+        return null;
+    }
+
     private string? FindFfmpegExecutable()
     {
-        if (_ffmpegSearched)
+        if (_cachedFfmpegPath != null && File.Exists(_cachedFfmpegPath))
             return _cachedFfmpegPath;
 
-        _ffmpegSearched = true;
-        _cachedFfmpegPath = FindExecutableInPathOrWinget("ffmpeg.exe");
-        return _cachedFfmpegPath;
+        // 1) Carpeta de instalación de la aplicación
+        var appBase = AppDomain.CurrentDomain.BaseDirectory;
+        var inAppTools = Path.Combine(appBase, "Tools", "ffmpeg.exe");
+        if (File.Exists(inAppTools)) return _cachedFfmpegPath = inAppTools;
+
+        var inAppBase = Path.Combine(appBase, "ffmpeg.exe");
+        if (File.Exists(inAppBase)) return _cachedFfmpegPath = inAppBase;
+
+        // 2) Carpeta local de herramientas de usuario
+        var inLocalTools = Path.Combine(_toolsDir, "ffmpeg.exe");
+        if (File.Exists(inLocalTools) && new FileInfo(inLocalTools).Length > 1_000_000)
+            return _cachedFfmpegPath = inLocalTools;
+
+        // 3) PATH y WinGet
+        var inSystem = FindExecutableInPathOrWinget("ffmpeg.exe");
+        if (!string.IsNullOrWhiteSpace(inSystem))
+            return _cachedFfmpegPath = inSystem;
+
+        return null;
     }
 
     private static string? FindExecutableInPathOrWinget(string exeName)
     {
+        // 1) Variables de entorno PATH
         var pathEnv = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
         foreach (var dir in pathEnv.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
         {
@@ -766,6 +938,18 @@ public class VideoQualityAndDownloadService
             catch { }
         }
 
+        // 2) Enlaces directos de WinGet (Links)
+        try
+        {
+            var wingetLinks = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Microsoft", "WinGet", "Links", exeName);
+            if (File.Exists(wingetLinks))
+                return wingetLinks;
+        }
+        catch { }
+
+        // 3) Paquetes instalados de WinGet
         try
         {
             var wingetDir = Path.Combine(
@@ -867,12 +1051,91 @@ public class VideoQualityAndDownloadService
         return lower.Contains("youtube.com") ||
                lower.Contains("youtu.be") ||
                lower.Contains("tiktok.com") ||
+               lower.Contains("dailymotion.com") ||
                lower.Contains("vimeo.com") ||
                lower.Contains("bilibili.com") ||
                lower.Contains("reddit.com") ||
                lower.Contains("redd.it") ||
                lower.Contains("twitch.tv") ||
                lower.Contains("rumble.com");
+    }
+
+    public static string HumanizeDownloadErrorMessage(string rawError, QualityOption quality)
+    {
+        if (string.IsNullOrWhiteSpace(rawError))
+            return $"No se pudo completar la descarga en la calidad seleccionada ({quality.Label}).";
+
+        if (rawError.Contains("Requested format is not available", StringComparison.OrdinalIgnoreCase) ||
+            rawError.Contains("formato solicitado no está disponible", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"La calidad {quality.Label} no está disponible para este video en particular. Intenta descargándolo en calidad 'Automática (Mejor)'.";
+        }
+
+        if (rawError.Contains("Account authentication is required", StringComparison.OrdinalIgnoreCase) ||
+            rawError.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase) ||
+            rawError.Contains("Private video", StringComparison.OrdinalIgnoreCase) ||
+            rawError.Contains("login", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Este video tiene restricción de acceso o requiere una cuenta en la plataforma para reproducirse.";
+        }
+
+        if (rawError.Contains("Video unavailable", StringComparison.OrdinalIgnoreCase) ||
+            rawError.Contains("Not found", StringComparison.OrdinalIgnoreCase) ||
+            rawError.Contains("404", StringComparison.OrdinalIgnoreCase))
+        {
+            return "El video seleccionado fue retirado o no se encuentra disponible en el servidor.";
+        }
+
+        // Extraer solo líneas informativas eliminando advertencias y tracebacks técnicos
+        var cleanLines = rawError
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Where(l => !l.Contains("traceback", StringComparison.OrdinalIgnoreCase) &&
+                        !l.Contains("File \"", StringComparison.OrdinalIgnoreCase) &&
+                        !l.Contains("WARNING:", StringComparison.OrdinalIgnoreCase) &&
+                        !l.Contains("Deprecated Feature", StringComparison.OrdinalIgnoreCase) &&
+                        !l.Contains("Función obsoleta", StringComparison.OrdinalIgnoreCase))
+            .Select(l => l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) ? l["ERROR:".Length..].Trim() : l.Trim())
+            .ToList();
+
+        var detail = cleanLines.Count > 0 ? string.Join(" ", cleanLines) : rawError;
+        return $"No fue posible descargar este video en la calidad seleccionada ({quality.Label}). Detalle: {detail}";
+    }
+
+    public static string? CreateNetscapeCookieFileFromHeader(string cookieHeader, string targetUrl)
+    {
+        if (string.IsNullOrWhiteSpace(cookieHeader) || !Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri))
+            return null;
+
+        try
+        {
+            var host = uri.Host;
+            var domain = host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? host[3..] : "." + host;
+            var tempPath = Path.Combine(Path.GetTempPath(), $"buscapp_c_{Guid.NewGuid():N}.txt");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("# Netscape HTTP Cookie File");
+            sb.AppendLine("# Created by BUSCAPP");
+
+            var pairs = cookieHeader.Split(';', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var rawPair in pairs)
+            {
+                var pair = rawPair.Trim();
+                int eq = pair.IndexOf('=');
+                if (eq <= 0) continue;
+                var name = pair[..eq].Trim();
+                var val = pair[(eq + 1)..].Trim();
+                if (string.IsNullOrEmpty(name)) continue;
+
+                sb.AppendLine($"{domain}\tTRUE\t/\tTRUE\t2147483647\t{name}\t{val}");
+            }
+
+            File.WriteAllText(tempPath, sb.ToString(), Encoding.ASCII);
+            return tempPath;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static int InferHeightFromUrl(string url)
