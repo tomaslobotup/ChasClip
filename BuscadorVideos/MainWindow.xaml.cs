@@ -52,6 +52,8 @@ public partial class MainWindow : Window, IBrowserScraper
     private readonly AdBlockerService _adBlocker = new();
     private readonly VideoQualityAndDownloadService _qualityAndDownloadService = new();
     private readonly VideoSearchCoordinator _searchCoordinator;
+    private readonly FavoritesService _favoritesService = new();
+    private readonly PlaybackHistoryService _playbackHistoryService = new();
 
     private readonly ObservableCollection<SavedSite> _savedSites = [];
     private readonly ObservableCollection<NsfwCategory> _nsfwCategories = [];
@@ -91,10 +93,9 @@ public partial class MainWindow : Window, IBrowserScraper
 
     public MainWindow()
     {
-        InitializeComponent();
-
-        _searchCoordinator = new VideoSearchCoordinator(this);
         _appSettings = _settingsService.LoadSettings();
+        _searchCoordinator = new VideoSearchCoordinator(this);
+        InitializeComponent();
         _adBlocker.IsEnabled = _appSettings.IsAdBlockerEnabled;
 
         // En la primera carga tras actualizar a V2, si la lista estaba vacía, poblar la lista predeterminada verificada
@@ -140,10 +141,29 @@ public partial class MainWindow : Window, IBrowserScraper
                 _currentDownloadDirectory = AppDomain.CurrentDomain.BaseDirectory;
         }
 
+        if (!string.IsNullOrWhiteSpace(_appSettings.DefaultDownloadDirectory) && Directory.Exists(_appSettings.DefaultDownloadDirectory))
+        {
+            _currentDownloadDirectory = _appSettings.DefaultDownloadDirectory;
+        }
+
         DownloaderFolderTextBox.Text = _currentDownloadDirectory;
         DownloaderQualityComboBox.ItemsSource = QualityOption.DefaultOptions;
         DownloaderQualityComboBox.SelectedIndex = 0;
         DownloaderRecentItemsControl.ItemsSource = _recentDownloads;
+
+        if (Enum.TryParse<AppTheme>(_appSettings.Theme, out var currentTheme))
+        {
+            AppThemeService.ApplyTheme(currentTheme, _appSettings.CustomAccentColor);
+        }
+        else
+        {
+            AppThemeService.ApplyTheme(AppTheme.Dark);
+        }
+        UpdateIncognitoBadgeVisual();
+
+        ToggleNsfwPanelButton.Visibility = _appSettings.IsAdultContentEnabled ? Visibility.Visible : Visibility.Collapsed;
+        LocalizationService.CurrentLanguage = _appSettings.Language;
+        ApplyLanguage();
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -779,6 +799,9 @@ public partial class MainWindow : Window, IBrowserScraper
 
     private void RecordSearchInHistory(string query, int resultCount)
     {
+        if (_appSettings.IsIncognitoMode)
+            return;
+
         var existing = _searchHistory.FirstOrDefault(x => string.Equals(x.Query, query, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
             _searchHistory.Remove(existing);
@@ -1360,6 +1383,15 @@ public partial class MainWindow : Window, IBrowserScraper
         {
             DownloaderDetectedPlatformBorder.Visibility = Visibility.Collapsed;
         }
+
+        bool isYtPlaylist = (text.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) || text.Contains("youtu.be", StringComparison.OrdinalIgnoreCase)) &&
+                            (text.Contains("list=", StringComparison.OrdinalIgnoreCase) || text.Contains("/playlist", StringComparison.OrdinalIgnoreCase));
+
+        DownloaderPlaylistDetectedBorder.Visibility = isYtPlaylist ? Visibility.Visible : Visibility.Collapsed;
+        if (isYtPlaylist)
+        {
+            DownloaderDownloadFullPlaylistCheckBox.IsChecked = _appSettings.DownloadPlaylistsComplete;
+        }
     }
 
     private void DownloaderClearUrlBtn_Click(object sender, RoutedEventArgs e)
@@ -1460,17 +1492,22 @@ public partial class MainWindow : Window, IBrowserScraper
 
         try
         {
+            bool isPlaylist = DownloaderPlaylistDetectedBorder.Visibility == Visibility.Visible &&
+                              DownloaderDownloadFullPlaylistCheckBox.IsChecked == true;
+
             var savedPath = await _qualityAndDownloadService.DownloadDirectUrlAsync(
                 rawUrl,
                 isAudioOnly,
                 selectedQuality,
                 _currentDownloadDirectory,
                 progress,
-                ct);
+                ct,
+                isPlaylist);
 
             _lastDownloadedFilePath = savedPath;
             DownloaderProgressBorder.Visibility = Visibility.Collapsed;
-            DownloaderSuccessFileNameText.Text = Path.GetFileName(savedPath) + $" • Guardado en {_currentDownloadDirectory}";
+            var displayName = isPlaylist ? $"Playlist: {Path.GetFileName(savedPath.TrimEnd('\\', '/'))}" : Path.GetFileName(savedPath);
+            DownloaderSuccessFileNameText.Text = displayName + $" • Guardado en {_currentDownloadDirectory}";
             DownloaderSuccessBorder.Visibility = Visibility.Visible;
 
             _recentDownloads.Insert(0, new RecentDownloadItem
@@ -1597,6 +1634,10 @@ public partial class MainWindow : Window, IBrowserScraper
     private void VideoCardControl_VideoSelected(object? sender, VideoResult video)
     {
         _activePlayerVideo = video;
+        if (!_appSettings.IsIncognitoMode)
+        {
+            _playbackHistoryService.AddEntry(video);
+        }
         _activeVideoStreams = [];
         while (_interceptedPlayerMediaUrls.TryDequeue(out _)) { }
 
@@ -2775,4 +2816,233 @@ public partial class MainWindow : Window, IBrowserScraper
     });
     return JSON.stringify(items);
 })()";
+
+    // ==================== FAVORITOS, HISTORIAL Y AJUSTES ====================
+
+    private void OpenFavoritesView_Click(object sender, RoutedEventArgs e)
+    {
+        NavToSearchArea_Click(sender, e);
+        _searchCts?.Cancel();
+        _previousSearchesStack.Clear();
+
+        var favs = _favoritesService.LoadFavorites();
+        _allSearchResults = favs.Select(f => f.ToVideoResult()).ToList();
+        _currentSearchQuery = "⭐ Mis Favoritos";
+        SearchQueryTextBox.Text = string.Empty;
+        _selectedFilterSiteId = null;
+        _currentPage = 1;
+
+        FilterBarBorder.Visibility = Visibility.Collapsed;
+        IncompatibleSearchOverlay.Visibility = Visibility.Collapsed;
+        SearchWarningBanner.Visibility = Visibility.Collapsed;
+
+        ApplyFilterAndRenderPage();
+        UpdateSearchSessionButtonsState();
+
+        if (_allSearchResults.Count == 0)
+        {
+            EmptyStateTitle.Text = "No tienes videos favoritos aún";
+            EmptyStateSubtitle.Text = "Toca la estrella ☆ en la esquina superior derecha de cualquier video para guardarlo aquí.";
+            EmptyStatePanel.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OpenHistoryView_Click(object sender, RoutedEventArgs e)
+    {
+        NavToSearchArea_Click(sender, e);
+        _searchCts?.Cancel();
+        _previousSearchesStack.Clear();
+
+        var history = _playbackHistoryService.LoadHistory();
+        _allSearchResults = history.Select(h => h.ToVideoResult()).ToList();
+        _currentSearchQuery = "🕒 Historial de Reproducción";
+        SearchQueryTextBox.Text = string.Empty;
+        _selectedFilterSiteId = null;
+        _currentPage = 1;
+
+        FilterBarBorder.Visibility = Visibility.Collapsed;
+        IncompatibleSearchOverlay.Visibility = Visibility.Collapsed;
+        SearchWarningBanner.Visibility = Visibility.Collapsed;
+
+        ApplyFilterAndRenderPage();
+        UpdateSearchSessionButtonsState();
+
+        if (_allSearchResults.Count == 0)
+        {
+            EmptyStateTitle.Text = "Historial de reproducción vacío";
+            EmptyStateSubtitle.Text = "Los videos que reproduzcas dentro de la aplicación se guardarán automáticamente aquí para que puedas retomarlos cuando quieras.";
+            EmptyStatePanel.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void OpenSettingsModalButton_Click(object sender, RoutedEventArgs e)
+    {
+        ThemeDarkRadio.IsChecked = _appSettings.Theme == "Dark";
+        ThemeLightRadio.IsChecked = _appSettings.Theme == "Light";
+        ThemeCustomRadio.IsChecked = _appSettings.Theme == "Custom";
+        CustomColorPalettePanel.Visibility = _appSettings.Theme == "Custom" ? Visibility.Visible : Visibility.Collapsed;
+        SettingsIncognitoCheckBox.IsChecked = _appSettings.IsIncognitoMode;
+        SettingsAdultCheckBox.IsChecked = _appSettings.IsAdultContentEnabled;
+        LangSpanishRadio.IsChecked = _appSettings.Language != "en";
+        LangEnglishRadio.IsChecked = _appSettings.Language == "en";
+        SettingsDownloadDirTextBox.Text = string.IsNullOrWhiteSpace(_appSettings.DefaultDownloadDirectory)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
+            : _appSettings.DefaultDownloadDirectory;
+        SettingsPlaylistAutoCheckBox.IsChecked = _appSettings.DownloadPlaylistsComplete;
+
+        SettingsModalOverlay.Visibility = Visibility.Visible;
+    }
+
+    private void CloseSettingsModal_Click(object sender, RoutedEventArgs e)
+    {
+        _appSettings.DownloadPlaylistsComplete = SettingsPlaylistAutoCheckBox.IsChecked == true;
+        _settingsService.SaveSettings(_appSettings);
+        SettingsModalOverlay.Visibility = Visibility.Collapsed;
+    }
+
+    private void ThemeRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_appSettings == null || _settingsService == null) return;
+
+        if (ThemeLightRadio?.IsChecked == true)
+        {
+            _appSettings.Theme = "Light";
+            if (CustomColorPalettePanel != null) CustomColorPalettePanel.Visibility = Visibility.Collapsed;
+            AppThemeService.ApplyTheme(AppTheme.Light);
+        }
+        else if (ThemeCustomRadio?.IsChecked == true)
+        {
+            _appSettings.Theme = "Custom";
+            if (CustomColorPalettePanel != null) CustomColorPalettePanel.Visibility = Visibility.Visible;
+            AppThemeService.ApplyTheme(AppTheme.Custom, _appSettings.CustomAccentColor);
+        }
+        else
+        {
+            _appSettings.Theme = "Dark";
+            if (CustomColorPalettePanel != null) CustomColorPalettePanel.Visibility = Visibility.Collapsed;
+            AppThemeService.ApplyTheme(AppTheme.Dark);
+        }
+
+        _settingsService.SaveSettings(_appSettings);
+    }
+
+    private void AccentPresetButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button b && b.Tag is string hex)
+        {
+            _appSettings.CustomAccentColor = hex;
+            _appSettings.Theme = "Custom";
+            if (ThemeCustomRadio != null) ThemeCustomRadio.IsChecked = true;
+            AppThemeService.ApplyTheme(AppTheme.Custom, hex);
+            _settingsService.SaveSettings(_appSettings);
+        }
+    }
+
+    private void SettingsIncognitoCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_appSettings == null || _settingsService == null) return;
+        _appSettings.IsIncognitoMode = SettingsIncognitoCheckBox.IsChecked == true;
+        _settingsService.SaveSettings(_appSettings);
+        UpdateIncognitoBadgeVisual();
+    }
+
+    private void ToggleIncognitoFromBadge_Click(object sender, MouseButtonEventArgs e)
+    {
+        _appSettings.IsIncognitoMode = !_appSettings.IsIncognitoMode;
+        _settingsService.SaveSettings(_appSettings);
+        UpdateIncognitoBadgeVisual();
+        if (SettingsIncognitoCheckBox != null)
+        {
+            SettingsIncognitoCheckBox.IsChecked = _appSettings.IsIncognitoMode;
+        }
+    }
+
+    private void UpdateIncognitoBadgeVisual()
+    {
+        if (IncognitoIndicatorBadge != null && _appSettings != null)
+        {
+            IncognitoIndicatorBadge.Visibility = _appSettings.IsIncognitoMode ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    private void SettingsChangeDownloadDir_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Seleccionar carpeta de descargas predeterminada",
+            InitialDirectory = SettingsDownloadDirTextBox.Text
+        };
+        if (dlg.ShowDialog() == true)
+        {
+            _appSettings.DefaultDownloadDirectory = dlg.FolderName;
+            SettingsDownloadDirTextBox.Text = dlg.FolderName;
+            _currentDownloadDirectory = dlg.FolderName;
+            DownloaderFolderTextBox.Text = dlg.FolderName;
+            _settingsService.SaveSettings(_appSettings);
+        }
+    }
+
+    private void SettingsClearSearchHistory_Click(object sender, RoutedEventArgs e)
+    {
+        _searchHistory.Clear();
+        _settingsService.ClearSearchHistory();
+        RefreshHistoryPopupState();
+        System.Windows.MessageBox.Show("Historial de búsquedas eliminado correctamente.", "Ajustes", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void SettingsClearPlaybackHistory_Click(object sender, RoutedEventArgs e)
+    {
+        _playbackHistoryService.ClearHistory();
+        System.Windows.MessageBox.Show("Historial de reproducción eliminado correctamente.", "Ajustes", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void SettingsClearFavorites_Click(object sender, RoutedEventArgs e)
+    {
+        _favoritesService.ClearFavorites();
+        System.Windows.MessageBox.Show("Lista de favoritos vaciada correctamente.", "Ajustes", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void SettingsAdultCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_appSettings == null || _settingsService == null) return;
+        _appSettings.IsAdultContentEnabled = SettingsAdultCheckBox.IsChecked == true;
+        ToggleNsfwPanelButton.Visibility = _appSettings.IsAdultContentEnabled ? Visibility.Visible : Visibility.Collapsed;
+        if (!_appSettings.IsAdultContentEnabled && NsfwPanelGrid.Visibility == Visibility.Visible)
+        {
+            ShowCustomSitesButton_Click(ShowCustomSitesButton, new RoutedEventArgs());
+        }
+        _settingsService.SaveSettings(_appSettings);
+    }
+
+    private void LangRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_appSettings == null || _settingsService == null) return;
+        _appSettings.Language = LangEnglishRadio?.IsChecked == true ? "en" : "es";
+        LocalizationService.CurrentLanguage = _appSettings.Language;
+        _settingsService.SaveSettings(_appSettings);
+        ApplyLanguage();
+    }
+
+    private void ApplyLanguage()
+    {
+        // Navegación Barra Superior
+        if (SearchButton != null) SearchButton.Content = LocalizationService.T("SearchBtn");
+        if (CancelSearchButton != null) CancelSearchButton.Content = LocalizationService.T("CancelBtn");
+        if (RevertSearchButton != null) RevertSearchButton.Content = LocalizationService.T("RevertBtn");
+        if (ClearSearchSessionButton != null) ClearSearchSessionButton.Content = LocalizationService.T("ClearBtn");
+        if (OpenSettingsButton != null) OpenSettingsButton.Content = LocalizationService.T("Settings");
+
+        // Barra Lateral
+        if (ShowCustomSitesButton != null) ShowCustomSitesButton.Content = LocalizationService.T("MySites");
+        if (ToggleNsfwPanelButton != null) ToggleNsfwPanelButton.Content = LocalizationService.T("NsfwSites");
+        if (SidebarFavoritesButton != null) SidebarFavoritesButton.Content = LocalizationService.T("Favorites");
+        if (SidebarHistoryButton != null) SidebarHistoryButton.Content = LocalizationService.T("History");
+
+        // Ajustes Modal Textos
+        if (SettingsIncognitoLabel != null) SettingsIncognitoLabel.Text = LocalizationService.T("SettingsIncognito");
+        if (SettingsIncognitoSubLabel != null) SettingsIncognitoSubLabel.Text = LocalizationService.T("SettingsIncognitoSub");
+        if (SettingsAdultLabel != null) SettingsAdultLabel.Text = LocalizationService.T("SettingsAdult");
+        if (SettingsAdultSubLabel != null) SettingsAdultSubLabel.Text = LocalizationService.T("SettingsAdultSub");
+    }
+
 }

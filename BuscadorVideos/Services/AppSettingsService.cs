@@ -124,4 +124,21 @@ public class AppSettingsService
             }
         }
     }
+
+    public void ClearSearchHistory()
+    {
+        lock (_lock)
+        {
+            try
+            {
+                if (File.Exists(HistoryFilePath))
+                {
+                    File.Delete(HistoryFilePath);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
 }

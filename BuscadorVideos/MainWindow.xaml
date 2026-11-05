@@ -13,7 +13,7 @@
         MinWidth="980"
         MinHeight="650"
         WindowStartupLocation="CenterScreen"
-        Background="#0B0E17"
+        Background="{DynamicResource AppBackgroundBrush}"
         PreviewKeyDown="Window_PreviewKeyDown"
         Loaded="Window_Loaded">
 
@@ -31,7 +31,7 @@
         <!-- ==================== LAYOUT PRINCIPAL ==================== -->
         <Grid x:Name="MainLayoutGrid"
               Panel.ZIndex="10"
-              Background="#0B0E17"
+              Background="{DynamicResource AppBackgroundBrush}"
               Opacity="0"
               RenderTransformOrigin="0.5,0.5">
             <Grid.RenderTransform>
@@ -70,12 +70,19 @@
                             </Border>
                         </StackPanel>
 
-                        <Button HorizontalAlignment="Right"
-                                Content="☕ Invitar un Cafecito"
-                                Padding="12,7"
-                                ToolTip="Regálame un cafecito para seguir mejorándolo (cafecito.app/atomichead)"
-                                Style="{StaticResource CafecitoButtonStyle}"
-                                Click="DonateCafecitoButton_Click"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                            <Button Content="⚙ Ajustes"
+                                    Margin="0,0,8,0"
+                                    Padding="12,7"
+                                    ToolTip="Abrir apartado de Ajustes"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenSettingsModalButton_Click"/>
+                            <Button Content="☕ Invitar un Cafecito"
+                                    Padding="12,7"
+                                    ToolTip="Regálame un cafecito para seguir mejorándolo (cafecito.app/atomichead)"
+                                    Style="{StaticResource CafecitoButtonStyle}"
+                                    Click="DonateCafecitoButton_Click"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -112,8 +119,8 @@
 
                             <!-- Tarjeta 1: Buscador Universal de Videos -->
                             <Border Grid.Column="0"
-                                    Background="#121625"
-                                    BorderBrush="#252E47"
+                                    Background="{DynamicResource AppSurfaceBrush}"
+                                    BorderBrush="{DynamicResource AppCardBorderBrush}"
                                     BorderThickness="1.5"
                                     CornerRadius="16"
                                     Padding="28,26"
@@ -167,8 +174,8 @@
 
                             <!-- Tarjeta 2: Descargador Directo de Videos y Audio MP3 -->
                             <Border Grid.Column="2"
-                                    Background="#121625"
-                                    BorderBrush="#252E47"
+                                    Background="{DynamicResource AppSurfaceBrush}"
+                                    BorderBrush="{DynamicResource AppCardBorderBrush}"
                                     BorderThickness="1.5"
                                     CornerRadius="16"
                                     Padding="28,26"
@@ -221,6 +228,27 @@
                             </Border>
                         </Grid>
 
+                        <!-- Acceso Rápido a Favoritos, Historial y Ajustes en el Menú Inicial -->
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,20">
+                            <Button Content="⭐ Videos Favoritos"
+                                    Margin="0,0,10,0"
+                                    Padding="14,8"
+                                    FontSize="12.5"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenFavoritesView_Click"/>
+                            <Button Content="🕒 Historial de Videos"
+                                    Margin="0,0,10,0"
+                                    Padding="14,8"
+                                    FontSize="12.5"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenHistoryView_Click"/>
+                            <Button Content="⚙ Ajustes"
+                                    Padding="14,8"
+                                    FontSize="12.5"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenSettingsModalButton_Click"/>
+                        </StackPanel>
+
                         <!-- Indicación de páginas soportadas en el Menú Inicial -->
                         <Border Background="#0E121E"
                                 BorderBrush="#1F263C"
@@ -266,7 +294,7 @@
                                    FontSize="11.5"
                                    VerticalAlignment="Center"/>
                         <TextBlock HorizontalAlignment="Right"
-                                   Text="v1.2.0"
+                                   Text="v1.3.0"
                                    Foreground="#545F7C"
                                    FontSize="11.5"
                                    VerticalAlignment="Center"/>
@@ -284,8 +312,8 @@
                 <!-- ==================== PANEL LATERAL COLAPSABLE ==================== -->
                 <Border x:Name="SidebarBorder"
                         Grid.Column="0"
-                        Background="#111522"
-                        BorderBrush="#20263B"
+                        Background="{DynamicResource AppSidebarBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="0,0,1,0"
                         ClipToBounds="True">
                     <Border.RenderTransform>
@@ -335,32 +363,63 @@
                         </Grid>
                     </Border>
 
-                    <!-- Selector entre Mis Páginas y Páginas NSFW (solo video directo, sin Hentai/series) -->
-                    <Grid Grid.Row="1" Margin="0,0,0,11">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="1.18*"/>
-                        </Grid.ColumnDefinitions>
+                    <!-- Accesos Rápidos (Favoritos e Historial) y Selector de Páginas -->
+                    <StackPanel Grid.Row="1" Margin="0,0,0,11">
+                        <!-- Accesos Rápidos: Favoritos e Historial en la Barra Lateral -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="6"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                        <Button x:Name="ShowCustomSitesButton"
-                                Grid.Column="0"
-                                Margin="0,0,4,0"
-                                Content="▶ Mis Páginas"
-                                FontSize="12"
-                                Padding="8,7"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Click="ShowCustomSitesButton_Click"/>
+                            <Button x:Name="SidebarFavoritesButton"
+                                    Grid.Column="0"
+                                    Content="⭐ Favoritos"
+                                    FontSize="12"
+                                    Padding="6,7"
+                                    ToolTip="Ver tus videos guardados como favoritos"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenFavoritesView_Click"/>
 
-                        <Button x:Name="ToggleNsfwPanelButton"
-                                Grid.Column="1"
-                                Margin="4,0,0,0"
-                                Content="🔞 Páginas NSFW"
-                                FontSize="12"
-                                Padding="8,7"
-                                ToolTip="Toca para ver portales NSFW directos (brilla); vuelve a tocar para desmarcar y apagar NSFW"
-                                Style="{StaticResource SecondaryButtonStyle}"
-                                Click="ToggleNsfwPanelButton_Click"/>
-                    </Grid>
+                            <Button x:Name="SidebarHistoryButton"
+                                    Grid.Column="2"
+                                    Content="🕒 Historial"
+                                    FontSize="12"
+                                    Padding="6,7"
+                                    ToolTip="Ver historial de videos reproducidos recientemente"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenHistoryView_Click"/>
+                        </Grid>
+
+                        <!-- Selector entre Mis Páginas y Páginas NSFW (+18) -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Button x:Name="ShowCustomSitesButton"
+                                    Grid.Column="0"
+                                    Margin="0,0,4,0"
+                                    Content="▶ Mis Páginas"
+                                    FontSize="12"
+                                    Padding="8,7"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Click="ShowCustomSitesButton_Click"/>
+
+                            <Button x:Name="ToggleNsfwPanelButton"
+                                    Grid.Column="1"
+                                    Margin="4,0,0,0"
+                                    Content="🔞 Páginas NSFW"
+                                    FontSize="12"
+                                    Padding="8,7"
+                                    Visibility="Collapsed"
+                                    ToolTip="Toca para ver portales NSFW directos (brilla); vuelve a tocar para desmarcar y apagar NSFW"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="ToggleNsfwPanelButton_Click"/>
+                        </Grid>
+                    </StackPanel>
 
                     <!-- Formulario Agregar Página -->
                     <StackPanel x:Name="CustomSiteFormPanel" Grid.Row="2" Margin="0,0,0,10">
@@ -652,14 +711,16 @@
 
                 <!-- Barra Superior de Búsqueda, Historial Desplegable, Revertir, Borrar y Bloqueador de Anuncios -->
                 <Border Grid.Row="0"
-                        Background="#111522"
-                        BorderBrush="#20263B"
+                        Background="{DynamicResource AppSurfaceBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="16,13">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="Auto"/>
@@ -696,6 +757,8 @@
                                     ToolTip="Abrir descargador de Video y MP3"
                                     Style="{StaticResource SecondaryButtonStyle}"
                                     Click="NavToDownloaderArea_Click"/>
+
+
                         </StackPanel>
 
                         <!-- Caja de Búsqueda con Historial Desplegable Integrado -->
@@ -935,6 +998,35 @@
                                 ToolTip="Regálame un cafecito para seguir mejorándolo (cafecito.app/atomichead)"
                                 Style="{StaticResource CafecitoButtonStyle}"
                                 Click="DonateCafecitoButton_Click"/>
+
+                        <!-- Indicador sutil de Modo Incógnito (si está activo) -->
+                        <Border x:Name="IncognitoIndicatorBadge"
+                                Grid.Column="8"
+                                Margin="7,0,0,0"
+                                Background="#2A1B3D"
+                                BorderBrush="#A78BFA"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="8,5"
+                                Visibility="Collapsed"
+                                Cursor="Hand"
+                                ToolTip="Modo Incógnito activo: no se guarda historial de búsquedas ni reproducción. Haz clic para desactivar."
+                                MouseLeftButtonUp="ToggleIncognitoFromBadge_Click">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="🕶️ Incógnito" Foreground="#DDD6FE" FontSize="11.5" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Botón Ajustes Generales -->
+                        <Button x:Name="OpenSettingsButton"
+                                Grid.Column="9"
+                                Margin="6,0,0,0"
+                                Content="⚙ Ajustes"
+                                Padding="11,7"
+                                FontSize="12.5"
+                                ToolTip="Abrir apartado de Ajustes (Temas, Privacidad, Descargas y Almacenamiento)"
+                                Style="{StaticResource SecondaryButtonStyle}"
+                                Click="OpenSettingsModalButton_Click"/>
                     </Grid>
                 </Border>
 
@@ -970,8 +1062,8 @@
                 <!-- Barra de Filtros por Página + Selector de Cuadrícula -->
                 <Border x:Name="FilterBarBorder"
                         Grid.Row="2"
-                        Background="#0F121D"
-                        BorderBrush="#1C2236"
+                        Background="{DynamicResource AppSurfaceBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="20,7"
                         Visibility="Collapsed">
@@ -1185,8 +1277,8 @@
                 <!-- Barra Inferior de Paginación Dinámica -->
                 <Border x:Name="PaginationBarBorder"
                         Grid.Row="4"
-                        Background="#111522"
-                        BorderBrush="#20263B"
+                        Background="{DynamicResource AppSurfaceBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="0,1,0,0"
                         Padding="22,11"
                         Visibility="Collapsed">
@@ -1367,12 +1459,19 @@
                                        FontWeight="Bold"/>
                         </StackPanel>
 
-                        <Button Grid.Column="2"
-                                Content="☕"
-                                Padding="10,7"
-                                ToolTip="Regálame un cafecito (cafecito.app/atomichead)"
-                                Style="{StaticResource CafecitoButtonStyle}"
-                                Click="DonateCafecitoButton_Click"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="⚙ Ajustes"
+                                    Margin="0,0,7,0"
+                                    Padding="11,7"
+                                    ToolTip="Abrir apartado de Ajustes"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="OpenSettingsModalButton_Click"/>
+                            <Button Content="☕"
+                                    Padding="10,7"
+                                    ToolTip="Regálame un cafecito (cafecito.app/atomichead)"
+                                    Style="{StaticResource CafecitoButtonStyle}"
+                                    Click="DonateCafecitoButton_Click"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -1384,8 +1483,8 @@
                     <StackPanel MaxWidth="820" HorizontalAlignment="Center">
 
                         <!-- Tarjeta de Páginas Soportadas Específicamente (sin mención de NSFW) -->
-                        <Border Background="#131726"
-                                BorderBrush="#242C44"
+                        <Border Background="{DynamicResource AppSurfaceBrush}"
+                                BorderBrush="{DynamicResource AppCardBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="12"
                                 Padding="18,14"
@@ -1442,8 +1541,8 @@
                         </Border>
 
                         <!-- Tarjeta de Ingreso de Enlace y Opciones -->
-                        <Border Background="#131726"
-                                BorderBrush="#242C44"
+                        <Border Background="{DynamicResource AppSurfaceBrush}"
+                                BorderBrush="{DynamicResource AppCardBorderBrush}"
                                 BorderThickness="1.5"
                                 CornerRadius="14"
                                 Padding="24,20"
@@ -1515,6 +1614,31 @@
                                         <TextBlock Text="✓ Plataforma detectada: " Foreground="#8B97BC" FontSize="12"/>
                                         <TextBlock x:Name="DownloaderDetectedPlatformText" Text="YouTube" Foreground="#A78BFA" FontSize="12" FontWeight="Bold"/>
                                     </StackPanel>
+                                </Border>
+
+                                <!-- Detección de Playlist de YouTube -->
+                                <Border x:Name="DownloaderPlaylistDetectedBorder"
+                                        Background="#241B38"
+                                        BorderBrush="#7C6BFF"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="12,8"
+                                        Margin="0,0,0,14"
+                                        Visibility="Collapsed">
+                                    <CheckBox x:Name="DownloaderDownloadFullPlaylistCheckBox"
+                                              IsChecked="True"
+                                              VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="📑 Descargar Lista de Reproducción Completa (Playlist)"
+                                                       Foreground="#EDE9FE"
+                                                       FontSize="12.5"
+                                                       FontWeight="Bold"/>
+                                            <TextBlock Text=" — Descargará todos los videos/canciones en una subcarpeta organizada"
+                                                       Foreground="#A78BFA"
+                                                       FontSize="12"
+                                                       Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
                                 </Border>
 
                                 <!-- Selección de Formato: Video (MP4) o Audio (MP3) -->
@@ -1856,6 +1980,411 @@
         </Grid>
 
         <!-- ==================== MODAL EDITAR PÁGINA GUARDADA ==================== -->
+                <!-- ==================== MODAL DE AJUSTES GENERALES ==================== -->
+        <Border x:Name="SettingsModalOverlay"
+                Panel.ZIndex="35"
+                Background="#CC06080E"
+                Visibility="Collapsed">
+            <Border Width="620"
+                    MaxHeight="700"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    Background="{DynamicResource AppSurfaceBrush}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1.5"
+                    CornerRadius="16"
+                    Padding="26,22">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="28" ShadowDepth="6" Direction="270" Color="#000000" Opacity="0.6"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Cabecera del Modal -->
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="⚙" FontSize="20" Margin="0,0,8,0"/>
+                            <TextBlock Text="Ajustes y Personalización"
+                                       Foreground="#F4F6FC"
+                                       FontSize="18"
+                                       FontWeight="Bold"/>
+                        </StackPanel>
+                        <Button Content="✕"
+                                HorizontalAlignment="Right"
+                                Width="28"
+                                Height="28"
+                                Style="{StaticResource IconButtonStyle}"
+                                Click="CloseSettingsModal_Click"/>
+                    </Grid>
+
+                    <!-- Contenido con secciones limpias -->
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="520" Margin="0,0,-8,0" Padding="0,0,8,0">
+                        <StackPanel>
+                            <!-- SECCIÓN 1: APARIENCIA Y TEMAS -->
+                            <Border Background="{DynamicResource AppSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16,14" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Text="🎨 Apariencia y Tema de la Aplicación"
+                                               Foreground="#E2E8F0"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="8"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Tema Oscuro (Default) -->
+                                        <RadioButton x:Name="ThemeDarkRadio"
+                                                     Grid.Column="0"
+                                                     GroupName="AppThemeGroup"
+                                                     Checked="ThemeRadio_Checked">
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="bd" Background="#181D2E" BorderBrush="#2D3754" BorderThickness="1.5" CornerRadius="8" Padding="10,12" Cursor="Hand">
+                                                        <StackPanel HorizontalAlignment="Center">
+                                                            <TextBlock Text="🌙" FontSize="18" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                                            <TextBlock Text="Oscuro" Foreground="#F1F5F9" FontSize="12.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                            <TextBlock Text="Predeterminado" Foreground="#8492B4" FontSize="10.5" HorizontalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="bd" Property="BorderBrush" Value="#7C6BFF"/>
+                                                            <Setter TargetName="bd" Property="Background" Value="#25244A"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+
+                                        <!-- Tema Blanco -->
+                                        <RadioButton x:Name="ThemeLightRadio"
+                                                     Grid.Column="2"
+                                                     GroupName="AppThemeGroup"
+                                                     Checked="ThemeRadio_Checked">
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="bd" Background="#181D2E" BorderBrush="#2D3754" BorderThickness="1.5" CornerRadius="8" Padding="10,12" Cursor="Hand">
+                                                        <StackPanel HorizontalAlignment="Center">
+                                                            <TextBlock Text="☀️" FontSize="18" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                                            <TextBlock Text="Blanco" Foreground="#F1F5F9" FontSize="12.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                            <TextBlock Text="Luminoso" Foreground="#8492B4" FontSize="10.5" HorizontalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="bd" Property="BorderBrush" Value="#4F46E5"/>
+                                                            <Setter TargetName="bd" Property="Background" Value="#23264A"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+
+                                        <!-- Tema Personalizable -->
+                                        <RadioButton x:Name="ThemeCustomRadio"
+                                                     Grid.Column="4"
+                                                     GroupName="AppThemeGroup"
+                                                     Checked="ThemeRadio_Checked">
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="bd" Background="#181D2E" BorderBrush="#2D3754" BorderThickness="1.5" CornerRadius="8" Padding="10,12" Cursor="Hand">
+                                                        <StackPanel HorizontalAlignment="Center">
+                                                            <TextBlock Text="🎨" FontSize="18" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                                            <TextBlock Text="Personalizado" Foreground="#F1F5F9" FontSize="12.5" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                                            <TextBlock Text="Color a elección" Foreground="#8492B4" FontSize="10.5" HorizontalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="bd" Property="BorderBrush" Value="#06B6D4"/>
+                                                            <Setter TargetName="bd" Property="Background" Value="#17293E"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+                                    </Grid>
+
+                                    <!-- Paleta de Color de Acento Personalizado -->
+                                    <StackPanel x:Name="CustomColorPalettePanel" Margin="0,0,0,4">
+                                        <TextBlock Text="Elige tu color de acento favorito:"
+                                                   Foreground="#A5B4D0"
+                                                   FontSize="12"
+                                                   Margin="0,0,0,8"/>
+                                        <WrapPanel x:Name="AccentColorPresetsWrapPanel">
+                                            <Button Tag="#7C6BFF" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#7C6BFF" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Button Tag="#06B6D4" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#06B6D4" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Button Tag="#10B981" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#10B981" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Button Tag="#F43F5E" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#F43F5E" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Button Tag="#F59E0B" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#F59E0B" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Button Tag="#3B82F6" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#3B82F6" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                            <Button Tag="#EC4899" Width="28" Height="28" Margin="0,0,8,0" Cursor="Hand" Click="AccentPresetButton_Click">
+                                                <Button.Template>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <Border CornerRadius="14" Background="#EC4899" BorderThickness="2" BorderBrush="#FFFFFF"/>
+                                                    </ControlTemplate>
+                                                </Button.Template>
+                                            </Button>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- SECCIÓN 3: IDIOMA DE LA APLICACIÓN -->
+                            <Border Background="{DynamicResource AppSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16,14" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock x:Name="SettingsLangSectionHeader"
+                                               Text="🌐 Idioma de la Aplicación (Language)"
+                                               Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="10"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <RadioButton x:Name="LangSpanishRadio"
+                                                     Grid.Column="0"
+                                                     GroupName="AppLangGroup"
+                                                     Checked="LangRadio_Checked">
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="bd" Background="{DynamicResource AppInputBackgroundBrush}" BorderBrush="{DynamicResource AppInputBorderBrush}" BorderThickness="1.5" CornerRadius="8" Padding="12,10" Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBlock Text="🇪🇸" FontSize="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="Español" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+
+                                        <RadioButton x:Name="LangEnglishRadio"
+                                                     Grid.Column="2"
+                                                     GroupName="AppLangGroup"
+                                                     Checked="LangRadio_Checked">
+                                            <RadioButton.Template>
+                                                <ControlTemplate TargetType="RadioButton">
+                                                    <Border x:Name="bd" Background="{DynamicResource AppInputBackgroundBrush}" BorderBrush="{DynamicResource AppInputBorderBrush}" BorderThickness="1.5" CornerRadius="8" Padding="12,10" Cursor="Hand">
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <TextBlock Text="🇺🇸" FontSize="16" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="English" Foreground="{DynamicResource AppTextPrimaryBrush}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource AppAccentBrush}"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </RadioButton.Template>
+                                        </RadioButton>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- SECCIÓN 2: PRIVACIDAD Y CONTENIDO -->
+                            <Border Background="{DynamicResource AppSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16,14" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Text="🕶️ Privacidad y Navegación"
+                                               Foreground="#E2E8F0"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <CheckBox x:Name="SettingsIncognitoCheckBox"
+                                              Checked="SettingsIncognitoCheckBox_Changed"
+                                              Unchecked="SettingsIncognitoCheckBox_Changed">
+                                        <StackPanel Margin="6,0,0,0">
+                                            <TextBlock x:Name="SettingsIncognitoLabel"
+                                                       Text="Activar Modo Incógnito"
+                                                       Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="SettingsIncognitoSubLabel"
+                                                       Text="Cuando está activo, no se guardan búsquedas en el historial reciente ni se registran los videos reproducidos."
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="11.5"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
+
+                                    <!-- Casilla Contenido para adultos (+18) -->
+                                    <CheckBox x:Name="SettingsAdultCheckBox"
+                                              Margin="0,12,0,0"
+                                              Checked="SettingsAdultCheckBox_Changed"
+                                              Unchecked="SettingsAdultCheckBox_Changed">
+                                        <StackPanel Margin="6,0,0,0">
+                                            <TextBlock x:Name="SettingsAdultLabel"
+                                                       Text="Habilitar sección para adultos (+18)"
+                                                       Foreground="{DynamicResource AppTextPrimaryBrush}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock x:Name="SettingsAdultSubLabel"
+                                                       Text="Muestra el botón 'Páginas NSFW' en el panel lateral para explorar y buscar en portales adultos."
+                                                       Foreground="{DynamicResource AppTextSecondaryBrush}"
+                                                       FontSize="11.5"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- SECCIÓN 4: DESCARGAS Y PLAYLISTS -->
+                            <Border Background="{DynamicResource AppSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16,14" Margin="0,0,0,14">
+                                <StackPanel>
+                                    <TextBlock Text="📥 Descargas y Carpetas"
+                                               Foreground="#E2E8F0"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <TextBlock Text="Carpeta de descargas predeterminada:"
+                                               Foreground="#A5B4D0"
+                                               FontSize="12"
+                                               Margin="0,0,0,6"/>
+
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="SettingsDownloadDirTextBox"
+                                                 Grid.Column="0"
+                                                 IsReadOnly="True"
+                                                 Style="{StaticResource ModernTextBoxStyle}"
+                                                 FontSize="12"
+                                                 Margin="0,0,8,0"/>
+                                        <Button Grid.Column="1"
+                                                Content="📁 Cambiar..."
+                                                Padding="12,7"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="SettingsChangeDownloadDir_Click"/>
+                                    </Grid>
+
+                                    <CheckBox x:Name="SettingsPlaylistAutoCheckBox"
+                                              IsChecked="True">
+                                        <StackPanel Margin="6,0,0,0">
+                                            <TextBlock Text="Descargar playlist completa al detectar una lista de YouTube"
+                                                       Foreground="#F1F5F9"
+                                                       FontSize="12.5"
+                                                       FontWeight="SemiBold"/>
+                                            <TextBlock Text="Descarga todos los videos o canciones de la lista en una subcarpeta organizada."
+                                                       Foreground="#8492B4"
+                                                       FontSize="11.5"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </CheckBox>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- SECCIÓN 5: GESTIÓN DE DATOS Y ALMACENAMIENTO -->
+                            <Border Background="{DynamicResource AppSubtleBrush}" BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1" CornerRadius="12" Padding="16,14">
+                                <StackPanel>
+                                    <TextBlock Text="🧹 Datos y Almacenamiento Local"
+                                               Foreground="#E2E8F0"
+                                               FontSize="13.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <WrapPanel>
+                                        <Button Content="Limpiar Historial de Búsquedas"
+                                                Margin="0,0,8,8"
+                                                Padding="11,7"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="SettingsClearSearchHistory_Click"/>
+                                        <Button Content="Limpiar Historial de Reproducción"
+                                                Margin="0,0,8,8"
+                                                Padding="11,7"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="SettingsClearPlaybackHistory_Click"/>
+                                        <Button Content="Vaciar Favoritos"
+                                                Margin="0,0,8,8"
+                                                Padding="11,7"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="SettingsClearFavorites_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Pie del Modal con Botón Guardar / Listo -->
+                    <Border Grid.Row="2"
+                            Margin="0,16,0,0"
+                            Padding="0,14,0,0"
+                            BorderBrush="#222B42"
+                            BorderThickness="0,1,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="Listo / Guardar"
+                                    Width="140"
+                                    Padding="16,9"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Click="CloseSettingsModal_Click"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Border>
+
         <Border x:Name="EditSiteModalOverlay"
                 Panel.ZIndex="20"
                 Background="#C406080E"

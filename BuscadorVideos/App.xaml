@@ -3,6 +3,25 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
     <Application.Resources>
+        <!-- Pinceles de Tema Dinámicos (Claro, Oscuro, Personalizable) -->
+        <SolidColorBrush x:Key="AppBackgroundBrush" Color="#0B0E17"/>
+        <SolidColorBrush x:Key="AppSurfaceBrush" Color="#121625"/>
+        <SolidColorBrush x:Key="AppSidebarBrush" Color="#111522"/>
+        <SolidColorBrush x:Key="AppCardBackgroundBrush" Color="#151927"/>
+        <SolidColorBrush x:Key="AppBorderBrush" Color="#20263B"/>
+        <SolidColorBrush x:Key="AppCardBorderBrush" Color="#252B40"/>
+        <SolidColorBrush x:Key="AppTextPrimaryBrush" Color="#FFFFFF"/>
+        <SolidColorBrush x:Key="AppTextSecondaryBrush" Color="#8F9BB9"/>
+        <SolidColorBrush x:Key="AppAccentBrush" Color="#6D5DFB"/>
+        <SolidColorBrush x:Key="AppAccentHoverBrush" Color="#8274FC"/>
+        <SolidColorBrush x:Key="AppButtonBackgroundBrush" Color="#1C2133"/>
+        <SolidColorBrush x:Key="AppButtonForegroundBrush" Color="#DCE1F0"/>
+        <SolidColorBrush x:Key="AppButtonBorderBrush" Color="#2D3550"/>
+        <SolidColorBrush x:Key="AppInputBackgroundBrush" Color="#131621"/>
+        <SolidColorBrush x:Key="AppInputForegroundBrush" Color="#F3F5FB"/>
+        <SolidColorBrush x:Key="AppInputBorderBrush" Color="#2A3046"/>
+        <SolidColorBrush x:Key="AppSubtleBrush" Color="#1A2035"/>
+
         <!-- ToolTip Oscuro Moderno -->
         <Style TargetType="ToolTip">
             <Setter Property="Background" Value="#181D2E"/>
@@ -162,11 +181,11 @@
             </Setter>
         </Style>
 
-        <!-- Botón Secundario Oscuro -->
+        <!-- Botón Secundario Dinámico -->
         <Style x:Key="SecondaryButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#1C2133"/>
-            <Setter Property="Foreground" Value="#DCE1F0"/>
-            <Setter Property="BorderBrush" Value="#2D3550"/>
+            <Setter Property="Background" Value="{DynamicResource AppButtonBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonForegroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="FontSize" Value="12.5"/>
@@ -370,9 +389,9 @@
 
         <!-- Botón Icono Compacto -->
         <Style x:Key="GridDensityButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="#1A2035"/>
-            <Setter Property="Foreground" Value="#9AA5C4"/>
-            <Setter Property="BorderBrush" Value="#2D3754"/>
+            <Setter Property="Background" Value="{DynamicResource AppButtonBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppButtonForegroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppButtonBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="FontSize" Value="11.5"/>
@@ -431,12 +450,12 @@
             </Setter>
         </Style>
 
-        <!-- Caja de Texto Oscura -->
+        <!-- Caja de Texto Dinámica -->
         <Style x:Key="ModernTextBoxStyle" TargetType="TextBox">
-            <Setter Property="Background" Value="#131621"/>
-            <Setter Property="Foreground" Value="#F3F5FB"/>
-            <Setter Property="CaretBrush" Value="#8072FF"/>
-            <Setter Property="BorderBrush" Value="#2A3046"/>
+            <Setter Property="Background" Value="{DynamicResource AppInputBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AppInputForegroundBrush}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource AppAccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AppInputBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1.5"/>
             <Setter Property="Padding" Value="12,8"/>
             <Setter Property="FontSize" Value="13.5"/>

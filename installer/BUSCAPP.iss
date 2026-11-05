@@ -1,6 +1,6 @@
-﻿; Script de instalaciÃ³n de Inno Setup 6 para BUSCAPP
+; Script de instalaciÃ³n de Inno Setup 6 para BUSCAPP
 #define MyAppName "BUSCAPP"
-#define MyAppVersion "1.2.0"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "tomaslobotup"
 #define MyAppURL "https://github.com/tomaslobotup/BUSCAPP"
 #define MyAppSupportURL "https://cafecito.app/atomichead"

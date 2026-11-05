@@ -34,6 +34,10 @@ public class VideoQualityAndDownloadService
         @"\[download\]\s+(\d{1,3}(?:\.\d+)?)%",
         RegexOptions.Compiled);
 
+    private static readonly Regex YtDlpPlaylistIndexRegex = new(
+        @"\[download\]\s+Downloading (?:video|item)\s+(\d+)\s+of\s+(\d+)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex DmIdRegex = new(
         @"dailymotion\.com/(?:video/|embed/video/|player\.html\?video=)([a-zA-Z0-9]+)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -819,7 +823,8 @@ public class VideoQualityAndDownloadService
         QualityOption selectedQuality,
         string targetDirectory,
         IProgress<(double Percent, string Status)> progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool isPlaylist = false)
     {
         var ytDlpPath = await EnsureYtDlpExecutableAsync(progress, ct);
         var ffmpegPath = await EnsureFfmpegExecutableAsync(progress, ct);
@@ -837,7 +842,14 @@ public class VideoQualityAndDownloadService
             StandardErrorEncoding = Encoding.UTF8
         };
 
-        psi.ArgumentList.Add("--no-playlist");
+        if (isPlaylist)
+        {
+            psi.ArgumentList.Add("--yes-playlist");
+        }
+        else
+        {
+            psi.ArgumentList.Add("--no-playlist");
+        }
         psi.ArgumentList.Add("--newline");
         psi.ArgumentList.Add("--no-warnings");
         psi.ArgumentList.Add("--windows-filenames");
@@ -906,7 +918,9 @@ public class VideoQualityAndDownloadService
         psi.ArgumentList.Add("--print");
         psi.ArgumentList.Add("after_move:filepath");
 
-        var outputTemplate = Path.Combine(targetDirectory, "%(title)s.%(ext)s");
+        var outputTemplate = isPlaylist
+            ? Path.Combine(targetDirectory, "%(playlist_title)s", "%(playlist_index)02d - %(title)s.%(ext)s")
+            : Path.Combine(targetDirectory, "%(title)s.%(ext)s");
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add(outputTemplate);
         psi.ArgumentList.Add(cleanUrl);
@@ -920,6 +934,8 @@ public class VideoQualityAndDownloadService
 
         string? downloadedPath = null;
         var errSb = new StringBuilder();
+        int currentPlaylistItem = 0;
+        int totalPlaylistItems = 0;
 
         var stdoutTask = Task.Run(async () =>
         {
@@ -928,10 +944,26 @@ public class VideoQualityAndDownloadService
                 var line = await proc.StandardOutput.ReadLineAsync(ct);
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
+                var pm = YtDlpPlaylistIndexRegex.Match(line);
+                if (pm.Success && int.TryParse(pm.Groups[1].Value, out var cIdx) && int.TryParse(pm.Groups[2].Value, out var tIdx))
+                {
+                    currentPlaylistItem = cIdx;
+                    totalPlaylistItems = tIdx;
+                    progress.Report(((double)(cIdx - 1) / Math.Max(1, tIdx) * 100.0, $"[Video {cIdx}/{tIdx}] Iniciando descarga..."));
+                }
+
                 var m = YtDlpPercentRegex.Match(line);
                 if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
                 {
-                    progress.Report((pct, isAudioOnlyMp3 ? $"Descargando audio: {pct:0.0}%" : $"Descargando video: {pct:0.0}%"));
+                    if (isPlaylist && totalPlaylistItems > 0)
+                    {
+                        var overallPct = ((currentPlaylistItem - 1) + (pct / 100.0)) / totalPlaylistItems * 100.0;
+                        progress.Report((overallPct, $"[Video {currentPlaylistItem}/{totalPlaylistItems}] {pct:0.0}%"));
+                    }
+                    else
+                    {
+                        progress.Report((pct, isAudioOnlyMp3 ? $"Descargando audio: {pct:0.0}%" : $"Descargando video: {pct:0.0}%"));
+                    }
                 }
                 else if (line.Contains("[ExtractAudio]", StringComparison.OrdinalIgnoreCase))
                 {
@@ -976,8 +1008,17 @@ public class VideoQualityAndDownloadService
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(errMsg) ? $"Error durante la descarga (código {proc.ExitCode})" : errMsg);
         }
 
-        if (!string.IsNullOrWhiteSpace(downloadedPath) && File.Exists(downloadedPath))
-            return downloadedPath;
+        if (!string.IsNullOrWhiteSpace(downloadedPath))
+        {
+            if (isPlaylist)
+            {
+                var parentDir = Path.GetDirectoryName(downloadedPath);
+                if (!string.IsNullOrWhiteSpace(parentDir) && Directory.Exists(parentDir))
+                    return parentDir;
+            }
+            if (File.Exists(downloadedPath))
+                return downloadedPath;
+        }
 
         var extExpected = isAudioOnlyMp3 ? ".mp3" : ".mp4";
         var dirInfo = new DirectoryInfo(targetDirectory);

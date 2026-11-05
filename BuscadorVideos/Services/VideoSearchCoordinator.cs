@@ -39,6 +39,12 @@ public class VideoSearchCoordinator
         {
             try
             {
+                var singleVideo = await DirectVideoLinkResolver.ResolveLinkAsync(query.Trim(), ct);
+                if (singleVideo != null)
+                {
+                    return ([singleVideo], warnings);
+                }
+
                 var directUrlVideos = await _directScraper.ScrapeDirectUrlAsync(query.Trim(), ct);
                 return (directUrlVideos, warnings);
             }

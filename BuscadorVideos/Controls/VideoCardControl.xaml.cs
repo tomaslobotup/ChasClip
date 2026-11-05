@@ -29,6 +29,10 @@ public partial class VideoCardControl : UserControl
     }
 
     public event EventHandler<VideoResult>? VideoSelected;
+    public event EventHandler<VideoResult>? FavoriteToggled;
+
+    private static readonly FavoritesService _favoritesService = new();
+    public bool IsFavorite { get; private set; }
 
     private CancellationTokenSource? _thumbCts;
     private CancellationTokenSource? _hoverCts;
@@ -40,6 +44,7 @@ public partial class VideoCardControl : UserControl
     public VideoCardControl()
     {
         InitializeComponent();
+        Loaded += (_, _) => UpdateFavoriteVisual(IsFavorite);
     }
 
     private static void OnVideoChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -68,8 +73,13 @@ public partial class VideoCardControl : UserControl
         {
             TitleTextBlock.Text = string.Empty;
             SubtitleTextBlock.Text = string.Empty;
+            IsFavorite = false;
+            UpdateFavoriteVisual(false);
             return;
         }
+
+        IsFavorite = _favoritesService.IsFavorite(video.VideoPageUrl);
+        UpdateFavoriteVisual(IsFavorite);
 
         TitleTextBlock.Text = video.Title;
         TitleTextBlock.ToolTip = video.Title;
@@ -304,9 +314,14 @@ public partial class VideoCardControl : UserControl
         CardScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(targetScale, dur));
         CardScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(targetScale, dur));
 
-        CardBorder.BorderBrush = hovered && !string.IsNullOrWhiteSpace(accentHex)
-            ? ParseBrush(accentHex, Color.FromRgb(124, 92, 255))
-            : new SolidColorBrush(Color.FromRgb(37, 43, 64));
+        if (hovered && !string.IsNullOrWhiteSpace(accentHex))
+        {
+            CardBorder.BorderBrush = ParseBrush(accentHex, Color.FromRgb(124, 92, 255));
+        }
+        else
+        {
+            CardBorder.ClearValue(Border.BorderBrushProperty);
+        }
     }
 
     private void StartSubtleCoverZoom()
@@ -318,6 +333,36 @@ public partial class VideoCardControl : UserControl
         };
         CoverZoomTransform.BeginAnimation(ScaleTransform.ScaleXProperty, anim);
         CoverZoomTransform.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
+    }
+
+    private void FavoriteButton_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (Video == null) return;
+        IsFavorite = _favoritesService.ToggleFavorite(Video);
+        UpdateFavoriteVisual(IsFavorite);
+        FavoriteToggled?.Invoke(this, Video);
+    }
+
+    private void UpdateFavoriteVisual(bool isFav)
+    {
+        if (FavoriteButton.Template?.FindName("favIcon", FavoriteButton) is TextBlock tb)
+        {
+            tb.Text = isFav ? "★" : "☆";
+            tb.Foreground = isFav
+                ? new SolidColorBrush(Color.FromRgb(245, 158, 11))
+                : new SolidColorBrush(Color.FromRgb(241, 245, 249));
+        }
+        if (FavoriteButton.Template?.FindName("favBd", FavoriteButton) is Border bd)
+        {
+            bd.BorderBrush = isFav
+                ? new SolidColorBrush(Color.FromRgb(245, 158, 11))
+                : new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
+            bd.Background = isFav
+                ? new SolidColorBrush(Color.FromArgb(220, 30, 24, 16))
+                : new SolidColorBrush(Color.FromArgb(176, 0, 0, 0));
+        }
+        FavoriteButton.ToolTip = isFav ? "Quitar de favoritos" : "Marcar como favorito";
     }
 
     private static SolidColorBrush ParseBrush(string? hex, Color fallback, double opacity = 1.0)
