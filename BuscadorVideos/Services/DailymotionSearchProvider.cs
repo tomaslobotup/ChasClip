@@ -52,7 +52,7 @@ public class DailymotionSearchProvider
                 ThumbnailUrl = thumb,
                 FilmstripUrl = filmstrip,
                 VideoPageUrl = pageUrl,
-                PlayerUrl = $"https://geo.dailymotion.com/player.html?video={id}&autoplay=true",
+                PlayerUrl = $"https://www.dailymotion.com/embed/video/{id}?autoplay=1",
                 SourceSiteId = site.Id,
                 SourceSiteName = site.DisplayName,
                 SourceDomain = site.Domain

@@ -213,6 +213,7 @@ public class SavedSite : INotifyPropertyChanged
         var d = (domain ?? string.Empty).ToLowerInvariant();
         if (d.Contains("youtube") || d.Contains("youtu.be")) return "#FF2E4C";
         if (d.Contains("tiktok")) return "#00E5D4";
+        if (d.Contains("instagram")) return "#E1306C";
         if (d.Contains("dailymotion")) return "#2F80ED";
         if (d.Contains("vimeo")) return "#1AB7EA";
         if (d.Contains("twitch")) return "#9146FF";

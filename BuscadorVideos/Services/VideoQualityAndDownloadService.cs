@@ -35,7 +35,7 @@ public class VideoQualityAndDownloadService
         RegexOptions.Compiled);
 
     private static readonly Regex DmIdRegex = new(
-        @"dailymotion\.com/(?:video/|player\.html\?video=)([a-zA-Z0-9]+)",
+        @"dailymotion\.com/(?:video/|embed/video/|player\.html\?video=)([a-zA-Z0-9]+)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly string _toolsDir;
@@ -807,6 +807,190 @@ public class VideoQualityAndDownloadService
                 try { File.Delete(generatedCookieFile); } catch { }
             }
         }
+    }
+
+    /// <summary>
+    /// Descarga un video o extrae audio MP3 directamente a partir de cualquier enlace web compatible
+    /// (YouTube, Twitch, TikTok, Instagram, Dailymotion o enlace directo de video).
+    /// </summary>
+    public async Task<string> DownloadDirectUrlAsync(
+        string url,
+        bool isAudioOnlyMp3,
+        QualityOption selectedQuality,
+        string targetDirectory,
+        IProgress<(double Percent, string Status)> progress,
+        CancellationToken ct)
+    {
+        var ytDlpPath = await EnsureYtDlpExecutableAsync(progress, ct);
+        var ffmpegPath = await EnsureFfmpegExecutableAsync(progress, ct);
+
+        Directory.CreateDirectory(targetDirectory);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = ytDlpPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+
+        psi.ArgumentList.Add("--no-playlist");
+        psi.ArgumentList.Add("--newline");
+        psi.ArgumentList.Add("--no-warnings");
+        psi.ArgumentList.Add("--windows-filenames");
+        psi.ArgumentList.Add("--user-agent");
+        psi.ArgumentList.Add(HttpHelper.BrowserUserAgent);
+
+        var cleanUrl = url.Trim();
+        if (cleanUrl.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase))
+        {
+            psi.ArgumentList.Add("--referer");
+            psi.ArgumentList.Add("https://www.dailymotion.com/");
+        }
+        else if (cleanUrl.Contains("instagram.com", StringComparison.OrdinalIgnoreCase))
+        {
+            psi.ArgumentList.Add("--referer");
+            psi.ArgumentList.Add("https://www.instagram.com/");
+        }
+        else if (cleanUrl.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase))
+        {
+            psi.ArgumentList.Add("--referer");
+            psi.ArgumentList.Add("https://www.tiktok.com/");
+        }
+        else if (cleanUrl.Contains("twitch.tv", StringComparison.OrdinalIgnoreCase))
+        {
+            psi.ArgumentList.Add("--referer");
+            psi.ArgumentList.Add("https://www.twitch.tv/");
+        }
+        else
+        {
+            psi.ArgumentList.Add("--referer");
+            psi.ArgumentList.Add(cleanUrl);
+        }
+
+        if (isAudioOnlyMp3)
+        {
+            psi.ArgumentList.Add("-x");
+            psi.ArgumentList.Add("--audio-format");
+            psi.ArgumentList.Add("mp3");
+            psi.ArgumentList.Add("--audio-quality");
+            psi.ArgumentList.Add("0");
+            if (!string.IsNullOrWhiteSpace(ffmpegPath))
+            {
+                psi.ArgumentList.Add("--ffmpeg-location");
+                psi.ArgumentList.Add(ffmpegPath);
+            }
+        }
+        else
+        {
+            int h = selectedQuality.TargetHeight;
+            string formatSelector = !string.IsNullOrWhiteSpace(ffmpegPath)
+                ? (h > 0 ? $"bestvideo[height<={h}]+bestaudio/bestvideo+bestaudio/best[height<={h}]/best" : "bestvideo+bestaudio/best")
+                : (h > 0 ? $"best[height<={h}][ext=mp4]/best[height<={h}]/best" : "best[ext=mp4]/best");
+
+            psi.ArgumentList.Add("-f");
+            psi.ArgumentList.Add(formatSelector);
+
+            if (!string.IsNullOrWhiteSpace(ffmpegPath))
+            {
+                psi.ArgumentList.Add("--ffmpeg-location");
+                psi.ArgumentList.Add(ffmpegPath);
+                psi.ArgumentList.Add("--merge-output-format");
+                psi.ArgumentList.Add("mp4");
+            }
+        }
+
+        psi.ArgumentList.Add("--print");
+        psi.ArgumentList.Add("after_move:filepath");
+
+        var outputTemplate = Path.Combine(targetDirectory, "%(title)s.%(ext)s");
+        psi.ArgumentList.Add("-o");
+        psi.ArgumentList.Add(outputTemplate);
+        psi.ArgumentList.Add(cleanUrl);
+
+        progress.Report((4, isAudioOnlyMp3 ? "Conectando para extraer audio MP3..." : $"Conectando para descargar video ({selectedQuality.Label})..."));
+
+        using var proc = Process.Start(psi)
+            ?? throw new InvalidOperationException("No se pudo iniciar el motor de descarga.");
+
+        await using var reg = ct.Register(() => { try { proc.Kill(true); } catch { } });
+
+        string? downloadedPath = null;
+        var errSb = new StringBuilder();
+
+        var stdoutTask = Task.Run(async () =>
+        {
+            while (!proc.StandardOutput.EndOfStream && !ct.IsCancellationRequested)
+            {
+                var line = await proc.StandardOutput.ReadLineAsync(ct);
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                var m = YtDlpPercentRegex.Match(line);
+                if (m.Success && double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var pct))
+                {
+                    progress.Report((pct, isAudioOnlyMp3 ? $"Descargando audio: {pct:0.0}%" : $"Descargando video: {pct:0.0}%"));
+                }
+                else if (line.Contains("[ExtractAudio]", StringComparison.OrdinalIgnoreCase))
+                {
+                    progress.Report((95, "Extrayendo y codificando audio a MP3..."));
+                }
+                else if (line.Contains("[Merger]", StringComparison.OrdinalIgnoreCase))
+                {
+                    progress.Report((98, "Uniendo pistas en MP4..."));
+                }
+                else if (Path.IsPathRooted(line.Trim()))
+                {
+                    downloadedPath = line.Trim();
+                }
+            }
+        }, ct);
+
+        var stderrTask = Task.Run(async () =>
+        {
+            while (!proc.StandardError.EndOfStream && !ct.IsCancellationRequested)
+            {
+                var line = await proc.StandardError.ReadLineAsync(ct);
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                if (line.StartsWith("WARNING:", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("Deprecated Feature", StringComparison.OrdinalIgnoreCase) ||
+                    line.Contains("JavaScript runtime", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                errSb.AppendLine(line);
+            }
+        }, ct);
+
+        await proc.WaitForExitAsync(ct);
+        try { await Task.WhenAll(stdoutTask, stderrTask); } catch { }
+
+        if (proc.ExitCode != 0)
+        {
+            var errMsg = errSb.ToString().Trim();
+            if (string.IsNullOrWhiteSpace(downloadedPath) || !File.Exists(downloadedPath))
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(errMsg) ? $"Error durante la descarga (código {proc.ExitCode})" : errMsg);
+        }
+
+        if (!string.IsNullOrWhiteSpace(downloadedPath) && File.Exists(downloadedPath))
+            return downloadedPath;
+
+        var extExpected = isAudioOnlyMp3 ? ".mp3" : ".mp4";
+        var dirInfo = new DirectoryInfo(targetDirectory);
+        var recentFile = dirInfo.GetFiles($"*{extExpected}")
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .FirstOrDefault();
+
+        if (recentFile != null && DateTime.UtcNow - recentFile.LastWriteTimeUtc < TimeSpan.FromMinutes(2))
+        {
+            return recentFile.FullName;
+        }
+
+        return downloadedPath ?? Path.Combine(targetDirectory, "descarga" + extExpected);
     }
 
     private async Task<string> EnsureYtDlpExecutableAsync(

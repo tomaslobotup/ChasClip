@@ -36,6 +36,10 @@ public class UniversalVideoSearchProvider
         @"bilibili\.com/video/(BV[0-9A-Za-z]+)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex InstagramPostRegex = new(
+        @"instagram\.com/(?:reel|p|tv)/([a-zA-Z0-9_-]+)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly Regex YahooCardRegex = new(
         @"data-rurl\s*=\s*""(https?://[^""]+)""[\s\S]{0,1800}?(?:<img[^>]+?src\s*=\s*""(https?://[^""]+)""[\s\S]{0,900}?)?(?:<h3[^>]*>([\s\S]*?)</h3>|aria-label\s*=\s*""([^""]+)"")",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -57,10 +61,12 @@ public class UniversalVideoSearchProvider
 
         var rootDomain = site.RootDomain;
         bool isTikTok = rootDomain.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase);
+        bool isReddit = rootDomain.Contains("reddit.com", StringComparison.OrdinalIgnoreCase);
+        bool isInstagram = rootDomain.Contains("instagram.com", StringComparison.OrdinalIgnoreCase);
 
         // 1) Para cualquier sitio externo (incluyendo páginas con restricción de edad 18+ o enlaces personalizados),
         //    buscamos PRIMERO directamente dentro del propio sitio sorteando bloqueos de edad y SafeSearch.
-        if (!isTikTok && !ct.IsCancellationRequested)
+        if (!isTikTok && !isReddit && !isInstagram && !ct.IsCancellationRequested)
         {
             try
             {
@@ -83,7 +89,7 @@ public class UniversalVideoSearchProvider
 
         // 2) Búsqueda complementaria en índices de video con SafeSearch DESACTIVADO (&adlt=off y &vm=p)
         //    usando el dominio raíz (RootDomain) para que subdominios como es.sitio.com coincidan con www.sitio.com.
-        if ((isTikTok || results.Count < 18) && !ct.IsCancellationRequested)
+        if ((isTikTok || isInstagram || results.Count < 18) && !ct.IsCancellationRequested)
         {
             var searchQuery = $"site:{rootDomain} {query}";
             var urlsToFetch = new[]
@@ -518,6 +524,26 @@ public class UniversalVideoSearchProvider
         if (biliMatch.Success)
             return $"https://player.bilibili.com/player.html?bvid={biliMatch.Groups[1].Value}&high_quality=1&autoplay=1";
 
+        var dmMatch = System.Text.RegularExpressions.Regex.Match(pageUrl, @"dailymotion\.com/(?:video/|embed/video/)([a-zA-Z0-9]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (dmMatch.Success)
+            return $"https://www.dailymotion.com/embed/video/{dmMatch.Groups[1].Value}?autoplay=1";
+
+        var twitchClipMatch = System.Text.RegularExpressions.Regex.Match(pageUrl, @"twitch\.tv/(?:[^/]+/clip/|clips/)([a-zA-Z0-9_-]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (twitchClipMatch.Success)
+            return $"https://clips.twitch.tv/embed?clip={twitchClipMatch.Groups[1].Value}&parent=localhost&parent=twitch.tv&autoplay=true";
+
+        var twitchVideoMatch = System.Text.RegularExpressions.Regex.Match(pageUrl, @"twitch\.tv/videos/(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (twitchVideoMatch.Success)
+            return $"https://player.twitch.tv/?video={twitchVideoMatch.Groups[1].Value}&parent=localhost&parent=twitch.tv&autoplay=true";
+
+        var twitchChannelMatch = System.Text.RegularExpressions.Regex.Match(pageUrl, @"twitch\.tv/([a-zA-Z0-9_]{3,25})$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (twitchChannelMatch.Success)
+            return $"https://player.twitch.tv/?channel={twitchChannelMatch.Groups[1].Value}&parent=localhost&parent=twitch.tv&autoplay=true";
+
+        var instaMatch = InstagramPostRegex.Match(pageUrl);
+        if (instaMatch.Success)
+            return $"https://www.instagram.com/p/{instaMatch.Groups[1].Value}/embed/";
+
         return pageUrl;
     }
 
@@ -536,6 +562,9 @@ public class UniversalVideoSearchProvider
         }
 
         if (host.Contains("tiktok.com") && !TikTokVideoIdRegex.IsMatch(url))
+            return true;
+
+        if (host.Contains("instagram.com") && !InstagramPostRegex.IsMatch(url))
             return true;
 
         return false;
@@ -594,8 +623,9 @@ public class UniversalVideoSearchProvider
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return url.Trim();
 
-        // Para TikTok y páginas similares ignoramos query params de tracking (?is_from_webapp=1...)
+        // Para TikTok, Instagram y páginas similares ignoramos query params de tracking (?is_from_webapp=1...)
         if (uri.Host.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase) ||
+            uri.Host.Contains("instagram.com", StringComparison.OrdinalIgnoreCase) ||
             uri.Host.Contains("vimeo.com", StringComparison.OrdinalIgnoreCase))
         {
             return $"{uri.Scheme}://{uri.Host.ToLowerInvariant()}{uri.AbsolutePath.TrimEnd('/')}";
@@ -621,6 +651,7 @@ public class UniversalVideoSearchProvider
         string[] suffixes =
         [
             " | TikTok", " - TikTok", " on TikTok",
+            " | Instagram", " - Instagram", " on Instagram", " • Instagram photos and videos",
             " on Vimeo", " | Vimeo",
             $" | {site.DisplayName}", $" - {site.DisplayName}",
             $" | {site.Domain}", $" - {site.Domain}"

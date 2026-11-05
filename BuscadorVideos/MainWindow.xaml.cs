@@ -23,7 +23,26 @@ namespace BuscadorVideos;
 /// </summary>
 public partial class MainWindow : Window, IBrowserScraper
 {
-    private const int VideosPerPage = 12; // Cuadrícula de 3 x 4 (12 videos por página)
+    public static readonly DependencyProperty SelectedGridColumnsProperty =
+        DependencyProperty.Register(
+            nameof(SelectedGridColumns),
+            typeof(int),
+            typeof(MainWindow),
+            new PropertyMetadata(3));
+
+    public int SelectedGridColumns
+    {
+        get => (int)GetValue(SelectedGridColumnsProperty);
+        set => SetValue(SelectedGridColumnsProperty, value);
+    }
+
+    private int VideosPerPage => SelectedGridColumns switch
+    {
+        6 => 24, // 6 x 4
+        4 => 16, // 4 x 4
+        _ => 12  // 3 x 4
+    };
+
     private const double ExpandedSidebarWidth = 340.0;
     private const string CafecitoDonationUrl = "https://cafecito.app/atomichead";
 
@@ -37,8 +56,15 @@ public partial class MainWindow : Window, IBrowserScraper
     private readonly ObservableCollection<SavedSite> _savedSites = [];
     private readonly ObservableCollection<NsfwCategory> _nsfwCategories = [];
     private readonly ObservableCollection<SearchHistoryEntry> _searchHistory = [];
+    private readonly ObservableCollection<RecentDownloadItem> _recentDownloads = [];
     private readonly Stack<(SavedSite Site, int OriginalIndex)> _deletedSitesUndoStack = new();
     private readonly Stack<SearchSessionSnapshot> _previousSearchesStack = new();
+
+    private CancellationTokenSource? _downloaderCts;
+    private string _currentDownloadDirectory = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        "Downloads");
+    private string? _lastDownloadedFilePath;
     private readonly ConcurrentQueue<(string Url, string? Referer)> _interceptedPlayerMediaUrls = new();
     private readonly SemaphoreSlim _scraperLock = new(1, 1);
 
@@ -102,6 +128,22 @@ public partial class MainWindow : Window, IBrowserScraper
         UpdateUndoDeletedSiteButtonState();
         UpdateSearchSessionButtonsState();
         UpdateSaveStatusText();
+
+        SelectedGridColumns = _appSettings.GridColumns is 3 or 4 or 6 ? _appSettings.GridColumns : 3;
+        UpdateGridDensityButtons();
+
+        // Inicializar directorio de descargas y opciones del apartado de descargas
+        if (!Directory.Exists(_currentDownloadDirectory))
+        {
+            _currentDownloadDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+            if (!Directory.Exists(_currentDownloadDirectory))
+                _currentDownloadDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        }
+
+        DownloaderFolderTextBox.Text = _currentDownloadDirectory;
+        DownloaderQualityComboBox.ItemsSource = QualityOption.DefaultOptions;
+        DownloaderQualityComboBox.SelectedIndex = 0;
+        DownloaderRecentItemsControl.ItemsSource = _recentDownloads;
     }
 
     private async void Window_Loaded(object sender, RoutedEventArgs e)
@@ -109,7 +151,6 @@ public partial class MainWindow : Window, IBrowserScraper
         var animTask = PlayStartupAnimationAsync();
         var webViewTask = InitializeWebViewsAsync();
         await animTask;
-        SearchQueryTextBox.Focus();
         await webViewTask;
     }
 
@@ -1180,6 +1221,364 @@ public partial class MainWindow : Window, IBrowserScraper
         }
     }
 
+    private void GridDensityButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string tagStr && int.TryParse(tagStr, out int cols))
+        {
+            if (cols is 3 or 4 or 6 && SelectedGridColumns != cols)
+            {
+                SelectedGridColumns = cols;
+                _appSettings.GridColumns = cols;
+                _settingsService.SaveSettings(_appSettings);
+                UpdateGridDensityButtons();
+                _currentPage = 1;
+                ApplyFilterAndRenderPage();
+            }
+        }
+    }
+
+    private void UpdateGridDensityButtons()
+    {
+        var activeBg = (Brush)new BrushConverter().ConvertFromString("#6D5DFB")!;
+        var activeFg = Brushes.White;
+        var activeBorder = (Brush)new BrushConverter().ConvertFromString("#9B8EFF")!;
+
+        var normalBg = (Brush)new BrushConverter().ConvertFromString("#1A2035")!;
+        var normalFg = (Brush)new BrushConverter().ConvertFromString("#9AA5C4")!;
+        var normalBorder = (Brush)new BrushConverter().ConvertFromString("#2D3754")!;
+
+        void StyleButton(Button? btn, bool isActive)
+        {
+            if (btn == null) return;
+            btn.Background = isActive ? activeBg : normalBg;
+            btn.Foreground = isActive ? activeFg : normalFg;
+            btn.BorderBrush = isActive ? activeBorder : normalBorder;
+            btn.FontWeight = isActive ? FontWeights.Bold : FontWeights.SemiBold;
+        }
+
+        StyleButton(GridCols3Btn, SelectedGridColumns == 3);
+        StyleButton(GridCols4Btn, SelectedGridColumns == 4);
+        StyleButton(GridCols6Btn, SelectedGridColumns == 6);
+
+        StyleButton(BottomGridCols3Btn, SelectedGridColumns == 3);
+        StyleButton(BottomGridCols4Btn, SelectedGridColumns == 4);
+        StyleButton(BottomGridCols6Btn, SelectedGridColumns == 6);
+    }
+
+    // ==================== NAVEGACIÓN ENTRE MENÚ INICIAL, BUSCADOR Y DESCARGADOR ====================
+
+    private void NavToHomeMenu_Click(object sender, RoutedEventArgs e) => ShowHomeMenu();
+    private void NavToSearchArea_Click(object sender, RoutedEventArgs e) => ShowSearchArea();
+    private void NavToDownloaderArea_Click(object sender, RoutedEventArgs e) => ShowDownloaderArea();
+    private void HomeMenu_OpenSearch_Click(object sender, RoutedEventArgs e) => ShowSearchArea();
+    private void HomeMenu_OpenDownloader_Click(object sender, RoutedEventArgs e) => ShowDownloaderArea();
+
+    private void ShowHomeMenu()
+    {
+        HomeMenuGrid.Visibility = Visibility.Visible;
+        SearchAreaGrid.Visibility = Visibility.Collapsed;
+        DownloaderAreaGrid.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowSearchArea()
+    {
+        HomeMenuGrid.Visibility = Visibility.Collapsed;
+        SearchAreaGrid.Visibility = Visibility.Visible;
+        DownloaderAreaGrid.Visibility = Visibility.Collapsed;
+        SearchQueryTextBox.Focus();
+    }
+
+    private void ShowDownloaderArea()
+    {
+        HomeMenuGrid.Visibility = Visibility.Collapsed;
+        SearchAreaGrid.Visibility = Visibility.Collapsed;
+        DownloaderAreaGrid.Visibility = Visibility.Visible;
+        DownloaderUrlTextBox.Focus();
+    }
+
+    // ==================== APARTADO DEDICADO DE DESCARGAS (VIDEO MP4 & AUDIO MP3) ====================
+
+    private void DownloaderFormatRadio_Checked(object sender, RoutedEventArgs e)
+    {
+        if (DownloaderQualityPanel == null || DownloaderAudioInfoPanel == null) return;
+        bool isMp3 = DownloaderFormatAudioRadio.IsChecked == true;
+        DownloaderQualityPanel.Visibility = isMp3 ? Visibility.Collapsed : Visibility.Visible;
+        DownloaderAudioInfoPanel.Visibility = isMp3 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void DownloaderUrlTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        var text = (DownloaderUrlTextBox.Text ?? string.Empty).Trim();
+        DownloaderClearUrlBtn.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            DownloaderDetectedPlatformBorder.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        string detected = "";
+        string colorHex = "#A78BFA";
+        if (text.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) || text.Contains("youtu.be", StringComparison.OrdinalIgnoreCase))
+        {
+            detected = "YouTube (Videos & Shorts)";
+            colorHex = "#F87171";
+        }
+        else if (text.Contains("twitch.tv", StringComparison.OrdinalIgnoreCase))
+        {
+            detected = "Twitch (Clips & VODs)";
+            colorHex = "#C084FC";
+        }
+        else if (text.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase))
+        {
+            detected = "TikTok (Videos y clips)";
+            colorHex = "#2DD4BF";
+        }
+        else if (text.Contains("instagram.com", StringComparison.OrdinalIgnoreCase))
+        {
+            detected = "Instagram (Reels & Publicaciones)";
+            colorHex = "#F472B6";
+        }
+        else if (text.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase))
+        {
+            detected = "Dailymotion (Full HD)";
+            colorHex = "#60A5FA";
+        }
+        else if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            detected = "Enlace Web Directo";
+            colorHex = "#34D399";
+        }
+
+        if (!string.IsNullOrEmpty(detected))
+        {
+            DownloaderDetectedPlatformText.Text = detected;
+            DownloaderDetectedPlatformText.Foreground = (Brush)new BrushConverter().ConvertFromString(colorHex)!;
+            DownloaderDetectedPlatformBorder.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            DownloaderDetectedPlatformBorder.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void DownloaderClearUrlBtn_Click(object sender, RoutedEventArgs e)
+    {
+        DownloaderUrlTextBox.Text = string.Empty;
+        DownloaderUrlTextBox.Focus();
+    }
+
+    private void DownloaderPasteUrlBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (Clipboard.ContainsText())
+            {
+                var txt = Clipboard.GetText();
+                if (!string.IsNullOrWhiteSpace(txt))
+                {
+                    DownloaderUrlTextBox.Text = txt.Trim();
+                    DownloaderUrlTextBox.CaretIndex = DownloaderUrlTextBox.Text.Length;
+                }
+            }
+        }
+        catch { }
+    }
+
+    private void DownloaderUrlTextBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            StartDedicatedDownload();
+        }
+    }
+
+    private void DownloaderBrowseFolderBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog
+            {
+                Title = "Selecciona la carpeta donde guardar tus descargas",
+                InitialDirectory = _currentDownloadDirectory
+            };
+            if (dlg.ShowDialog(this) == true && !string.IsNullOrWhiteSpace(dlg.FolderName))
+            {
+                _currentDownloadDirectory = dlg.FolderName;
+                DownloaderFolderTextBox.Text = _currentDownloadDirectory;
+            }
+        }
+        catch
+        {
+            // Fallback si no está disponible
+        }
+    }
+
+    private void DownloaderDismissErrorBtn_Click(object sender, RoutedEventArgs e)
+    {
+        DownloaderErrorBorder.Visibility = Visibility.Collapsed;
+    }
+
+    private void DownloaderStartButton_Click(object sender, RoutedEventArgs e)
+    {
+        StartDedicatedDownload();
+    }
+
+    private async void StartDedicatedDownload()
+    {
+        var rawUrl = (DownloaderUrlTextBox.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(rawUrl) || (!rawUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !rawUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShowDownloaderError("Por favor, ingresa o pega un enlace válido que comience con http:// o https://");
+            return;
+        }
+
+        DownloaderErrorBorder.Visibility = Visibility.Collapsed;
+        DownloaderSuccessBorder.Visibility = Visibility.Collapsed;
+
+        bool isAudioOnly = DownloaderFormatAudioRadio.IsChecked == true;
+        var selectedQuality = DownloaderQualityComboBox.SelectedItem as QualityOption ?? QualityOption.DefaultOptions[0];
+
+        _downloaderCts?.Cancel();
+        _downloaderCts = new CancellationTokenSource();
+        var ct = _downloaderCts.Token;
+
+        DownloaderStartButton.IsEnabled = false;
+        DownloaderProgressBorder.Visibility = Visibility.Visible;
+        DownloaderProgressBar.Value = 0;
+        DownloaderProgressStatusText.Text = "Iniciando descarga...";
+
+        var progress = new Progress<(double Percent, string Status)>(report =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                DownloaderProgressBar.Value = Math.Clamp(report.Percent, 0, 100);
+                DownloaderProgressStatusText.Text = report.Status;
+            });
+        });
+
+        try
+        {
+            var savedPath = await _qualityAndDownloadService.DownloadDirectUrlAsync(
+                rawUrl,
+                isAudioOnly,
+                selectedQuality,
+                _currentDownloadDirectory,
+                progress,
+                ct);
+
+            _lastDownloadedFilePath = savedPath;
+            DownloaderProgressBorder.Visibility = Visibility.Collapsed;
+            DownloaderSuccessFileNameText.Text = Path.GetFileName(savedPath) + $" • Guardado en {_currentDownloadDirectory}";
+            DownloaderSuccessBorder.Visibility = Visibility.Visible;
+
+            _recentDownloads.Insert(0, new RecentDownloadItem
+            {
+                FileName = Path.GetFileName(savedPath),
+                FilePath = savedPath,
+                FormatType = isAudioOnly ? "MP3" : "MP4",
+                SourceUrl = rawUrl,
+                Timestamp = DateTime.Now.ToString("HH:mm:ss")
+            });
+
+            DownloaderRecentSectionBorder.Visibility = Visibility.Visible;
+        }
+        catch (OperationCanceledException)
+        {
+            DownloaderProgressBorder.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception ex)
+        {
+            DownloaderProgressBorder.Visibility = Visibility.Collapsed;
+            ShowDownloaderError(VideoQualityAndDownloadService.HumanizeDownloadErrorMessage(ex.Message, selectedQuality));
+        }
+        finally
+        {
+            DownloaderStartButton.IsEnabled = true;
+        }
+    }
+
+    private void DownloaderCancelButton_Click(object sender, RoutedEventArgs e)
+    {
+        try { _downloaderCts?.Cancel(); } catch { }
+        DownloaderProgressBorder.Visibility = Visibility.Collapsed;
+        DownloaderStartButton.IsEnabled = true;
+    }
+
+    private void ShowDownloaderError(string message)
+    {
+        DownloaderErrorText.Text = message;
+        DownloaderErrorBorder.Visibility = Visibility.Visible;
+    }
+
+    private void DownloaderOpenCompletedFileBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_lastDownloadedFilePath) && File.Exists(_lastDownloadedFilePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = _lastDownloadedFilePath,
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+    }
+
+    private void DownloaderOpenCompletedFolderBtn_Click(object sender, RoutedEventArgs e)
+    {
+        OpenFolderOrSelectFile(_lastDownloadedFilePath ?? _currentDownloadDirectory);
+    }
+
+    private void RecentDownloadOpenFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string path } && File.Exists(path))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo { FileName = path, UseShellExecute = true });
+            }
+            catch { }
+        }
+    }
+
+    private void RecentDownloadOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string path })
+        {
+            OpenFolderOrSelectFile(path);
+        }
+    }
+
+    private static void OpenFolderOrSelectFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"/select,\"{path}\"",
+                    UseShellExecute = true
+                });
+            }
+            else if (Directory.Exists(path))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = $"\"{path}\"",
+                    UseShellExecute = true
+                });
+            }
+        }
+        catch { }
+    }
+
     // ==================== REPRODUCTOR INTEGRADO, REGULADOR DE CALIDAD, DESCARGA Y CARTEL NO COMPATIBLE ====================
 
     private void InitializeQualitySelector()
@@ -1284,7 +1683,7 @@ public partial class MainWindow : Window, IBrowserScraper
             {
                 if (_activePlayerVideo != currentVideo) return;
                 var found = await wv.ExecuteScriptAsync(
-                    "Boolean(document.querySelector('video, #movie_player, .html5-video-player, .jwplayer, .video-js, .fluid_video_wrapper, .plyr, shreddit-player, iframe[src*=\"embed\"], iframe[src*=\"player\"], iframe[src*=\"tiktok.com/player\"], iframe[src*=\"bilibili.com/player\"]'))");
+                    "Boolean(location.pathname.includes('/embed/video/') || location.pathname.includes('/player/v1/') || location.hostname.includes('player.twitch.tv') || location.hostname.includes('clips.twitch.tv') || location.hostname.includes('redditmedia.com') || document.querySelector('video, #movie_player, .html5-video-player, .jwplayer, .video-js, .fluid_video_wrapper, .plyr, shreddit-player, shreddit-async-loader, .video-player, [data-a-target=video-player], iframe[src*=\"embed\"], iframe[src*=\"player\"], iframe[src*=\"tiktok.com/player\"], iframe[src*=\"bilibili.com/player\"]'))");
                 if (found == "true") break;
                 await Task.Delay(250);
             }
@@ -1589,14 +1988,25 @@ public partial class MainWindow : Window, IBrowserScraper
     try {
         const host = (location.hostname || '').toLowerCase();
 
-        // 0) Si ya estamos en un player dedicado limpio (Dailymotion, Vimeo, TikTok player/v1, Bilibili player), respetar su UI nativa
+        // 0) Si ya estamos en un player dedicado limpio (Dailymotion, Vimeo, TikTok player/v1, Bilibili player, Twitch embed, Instagram embed), respetar su UI nativa
         if (host.includes('geo.dailymotion.com') ||
+            (host.includes('dailymotion.com') && (location.pathname.includes('/embed/video/') || location.pathname.includes('/player/'))) ||
             host.includes('player.vimeo.com') ||
             host.includes('player.bilibili.com') ||
+            host.includes('player.twitch.tv') ||
+            host.includes('clips.twitch.tv') ||
+            (host.includes('instagram.com') && location.pathname.includes('/embed')) ||
             location.pathname.includes('/player/v1/')) {
             document.documentElement.style.background = '#000';
             document.body.style.background = '#000';
             document.body.style.margin = '0';
+            const vid = document.querySelector('video');
+            if (vid) {
+                vid.style.width = '100vw';
+                vid.style.height = '100vh';
+                vid.style.objectFit = 'contain';
+                vid.play().catch(() => {});
+            }
             return 'DEDICATED_EMBED';
         }
 
@@ -1635,11 +2045,71 @@ public partial class MainWindow : Window, IBrowserScraper
             return document.querySelector('#movie_player, video') ? 'YOUTUBE_ISOLATED' : 'INCOMPATIBLE';
         }
 
+        // 1.4) Aislamiento nativo para Twitch (si se abre en página completa de twitch.tv)
+        if (host.includes('twitch.tv')) {
+            let st = document.getElementById('buscapp-twitch-clean');
+            if (!st) {
+                st = document.createElement('style');
+                st.id = 'buscapp-twitch-clean';
+                st.textContent = `
+                    nav, .side-nav, .right-column, .chat-shell, .channel-root__right-column,
+                    [data-a-target=top-nav-container], [data-a-target=chat-container],
+                    [data-a-target=side-nav-bar], .whispers, .tw-cookie-banner,
+                    .consent-banner, [data-a-target=consent-banner] {
+                        display: none !important;
+                    }
+                    html, body, #root, .tw-root {
+                        margin: 0 !important; padding: 0 !important;
+                        background: #000 !important; overflow: hidden !important;
+                        width: 100vw !important; height: 100vh !important;
+                    }
+                    .video-player, .video-player__container, .persistent-player, [data-a-target=video-player], .highwind-video-player {
+                        position: fixed !important; inset: 0 !important;
+                        width: 100vw !important; height: 100vh !important;
+                        max-width: 100vw !important; max-height: 100vh !important;
+                        z-index: 2147483646 !important;
+                    }
+                    .player-overlay-background, .video-player__overlay--fade {
+                        background: transparent !important;
+                        display: none !important;
+                    }
+                    .video-player video, [data-a-target=video-player] video, video {
+                        width: 100vw !important; height: 100vh !important; object-fit: contain !important;
+                    }
+                `;
+                document.head.appendChild(st);
+            }
+            window.dispatchEvent(new Event('resize'));
+            const v = document.querySelector('video');
+            if (v) {
+                v.muted = false;
+                v.play().catch(() => {});
+            }
+            return 'TWITCH_ISOLATED';
+        }
+
+        // 1.45) Aislamiento nativo para Instagram (publicaciones / reels / embeds)
+        if (host.includes('instagram.com')) {
+            document.documentElement.style.background = '#000';
+            document.body.style.background = '#000';
+            document.body.style.margin = '0';
+            const playBtn = document.querySelector('[aria-label*=""Play""], [aria-label*=""Reproducir""], .playButton, [role=button][tabindex=""0""]');
+            if (playBtn) { try { playBtn.click(); } catch(e) {} }
+            const v = document.querySelector('video');
+            if (v) {
+                v.muted = false;
+                v.play().catch(() => {});
+                return 'INSTAGRAM_ISOLATED';
+            }
+            return 'DEDICATED_EMBED';
+        }
+
         // 1.5) Aislamiento nativo para Reddit (web component shreddit-player)
         if (host.includes('reddit.com')) {
-            document.querySelectorAll('reddit-header-large, #bottom-sheet, #overlay-container, shreddit-async-loader, shreddit-comment-tree, aside, footer').forEach(e => {
+            document.querySelectorAll('reddit-header-large, #bottom-sheet, reddit-bottom-sheet, reddit-cookie-banner, #overlay-container, reddit-overlay-container, shreddit-comment-tree, aside, footer, xpromo-nsfw-blocking-container, [data-testid=nsfw-blocking-container], [slot=interstitial]').forEach(e => {
                 try { e.remove(); } catch(err) {}
             });
+            document.querySelectorAll('button[slot*=warning], button[aria-label*=18], button[id*=age], button[id*=agree]').forEach(b => { try { b.click(); } catch(err) {} });
             const sp = document.querySelector('shreddit-player');
             if (sp) {
                 let st = document.getElementById('buscapp-reddit-clean');
@@ -1648,17 +2118,38 @@ public partial class MainWindow : Window, IBrowserScraper
                     st.id = 'buscapp-reddit-clean';
                     st.textContent = `
                         html, body { margin:0 !important; padding:0 !important; background:#000 !important; overflow:hidden !important; width:100vw !important; height:100vh !important; }
-                        reddit-header-large, #bottom-sheet, #overlay-container, shreddit-async-loader, shreddit-comment-tree, aside, footer { display:none !important; }
-                        shreddit-player { position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; z-index:2147483647 !important; background:#000 !important; }
+                        reddit-header-large, #bottom-sheet, reddit-bottom-sheet, reddit-cookie-banner, #overlay-container, reddit-overlay-container, shreddit-comment-tree, aside, footer, xpromo-nsfw-blocking-container, [data-testid=nsfw-blocking-container] { display:none !important; }
+                        shreddit-async-loader { display:block !important; width:100vw !important; height:100vh !important; }
+                        shreddit-player, [data-testid=shreddit-player] { position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; max-width:100vw !important; max-height:100vh !important; z-index:2147483646 !important; filter:none !important; }
+                        shreddit-player video, video { width:100vw !important; height:100vh !important; object-fit:contain !important; }
                     `;
                     document.head.appendChild(st);
                 }
-                const vid = sp.querySelector('video') || (sp.shadowRoot ? sp.shadowRoot.querySelector('video') : null);
+                sp.style.setProperty('filter', 'none', 'important');
+                let anc = sp.parentElement;
+                while (anc && anc !== document.body && anc !== document.documentElement) {
+                    anc.style.setProperty('overflow', 'visible', 'important');
+                    anc.style.setProperty('transform', 'none', 'important');
+                    anc.style.setProperty('filter', 'none', 'important');
+                    anc.style.setProperty('contain', 'none', 'important');
+                    anc = anc.parentElement;
+                }
+                const vid = sp.querySelector('video') || (sp.shadowRoot ? sp.shadowRoot.querySelector('video') : null) || document.querySelector('video');
                 if (vid) {
                     vid.style.setProperty('width', '100vw', 'important');
                     vid.style.setProperty('height', '100vh', 'important');
                     vid.style.setProperty('object-fit', 'contain', 'important');
+                    vid.muted = false;
                     vid.play().catch(() => {});
+                }
+                window.dispatchEvent(new Event('resize'));
+                if (sp.shadowRoot) {
+                    sp.shadowRoot.querySelectorAll('button').forEach(b => {
+                        const txt = (b.innerText || b.getAttribute('aria-label') || '').toLowerCase();
+                        if (txt.includes('play') || txt.includes('view') || txt.includes('nsfw') || txt.includes('yes')) {
+                            try { b.click(); } catch(e) {}
+                        }
+                    });
                 }
                 return 'REDDIT_ISOLATED';
             }
@@ -1689,6 +2180,14 @@ public partial class MainWindow : Window, IBrowserScraper
             const mp4Match = html.match(/https?:\\?\/\\?\/[^""'\s<>]+?\.mp4(?:\?[^""'\s<>]*)?/i);
             if (mp4Match) {
                 directSrc = mp4Match[0].replace(/\\\//g, '/').replace(/&amp;/g, '&');
+            }
+        }
+
+        // Si la propia URL cargada en el navegador es un archivo directo MP4/WebM
+        if (!directSrc) {
+            const loc = location.href || '';
+            if (loc.includes('.mp4') || loc.includes('.webm') || loc.includes('DASH_') || loc.includes('fallback')) {
+                directSrc = loc;
             }
         }
 
@@ -1724,7 +2223,17 @@ public partial class MainWindow : Window, IBrowserScraper
 
             document.querySelectorAll('body *').forEach(el => {
                 if (!keepChain.has(el) && !target.contains(el)) {
-                    el.style.setProperty('display', 'none', 'important');
+                    // Solo ocultar barras de navegación, encabezados, comentarios y barras laterales conocidas, nunca contenedores padre/hermanos genéricos
+                    const tag = el.tagName.toLowerCase();
+                    const cls = (el.className || '').toString().toLowerCase();
+                    const id = (el.id || '').toString().toLowerCase();
+                    if (tag === 'header' || tag === 'nav' || tag === 'footer' || tag === 'aside' ||
+                        cls.includes('comment') || cls.includes('sidebar') || cls.includes('chat') ||
+                        cls.includes('header') || cls.includes('nav') || cls.includes('footer') ||
+                        id.includes('comment') || id.includes('sidebar') || id.includes('chat') ||
+                        id.includes('header') || id.includes('nav') || id.includes('footer')) {
+                        try { el.style.setProperty('display', 'none', 'important'); } catch(err) {}
+                    }
                 }
             });
 
@@ -2061,6 +2570,8 @@ public partial class MainWindow : Window, IBrowserScraper
     try {
         document.cookie = 'age_verified=1; path=/';
         document.cookie = 'over18=1; path=/';
+        document.cookie = 'over18=1; path=/; domain=.reddit.com';
+        document.cookie = 'edgebucket=1; path=/; domain=.reddit.com';
         document.cookie = 'accessAgeDisclaimerPH=1; path=/';
         document.cookie = 'age_gate=1; path=/';
         document.cookie = 'disclaimer=1; path=/';

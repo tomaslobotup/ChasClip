@@ -9,4 +9,5 @@ public class AppSettings
     public bool IsSidebarCollapsed { get; set; } = false;
     public int PreferredQualityHeight { get; set; } = 0; // 0 = Automática (Mejor disponible)
     public bool DefaultsSeededV2 { get; set; } = false;
+    public int GridColumns { get; set; } = 3;
 }

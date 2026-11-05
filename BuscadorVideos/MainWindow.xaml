@@ -7,7 +7,7 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="BUSCAPP — Buscador Universal de Videos"
-        Icon="pack://application:,,,/Assets/logo.png"
+        Icon="pack://application:,,,/Assets/logo.ico"
         Width="1380"
         Height="880"
         MinWidth="980"
@@ -38,21 +38,259 @@
                 <TranslateTransform x:Name="MainLayoutTranslate" Y="14"/>
             </Grid.RenderTransform>
 
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="340"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
+            <!-- ==================== 1) MENÚ INICIAL / PANTALLA DE BIENVENIDA ==================== -->
+            <Grid x:Name="HomeMenuGrid" Visibility="Visible">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-            <!-- ==================== PANEL LATERAL COLAPSABLE ==================== -->
-            <Border x:Name="SidebarBorder"
-                    Grid.Column="0"
-                    Background="#111522"
-                    BorderBrush="#20263B"
-                    BorderThickness="0,0,1,0"
-                    ClipToBounds="True">
-                <Border.RenderTransform>
-                    <TranslateTransform x:Name="SidebarTranslate" X="0"/>
-                </Border.RenderTransform>
+                <!-- Barra Superior del Menú Inicial -->
+                <Border Grid.Row="0"
+                        Background="#101422"
+                        BorderBrush="#1D243A"
+                        BorderThickness="0,0,0,1"
+                        Padding="28,14">
+                    <Grid>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Image Source="pack://application:,,,/Assets/logo.png"
+                                   MaxHeight="38"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                            <Border Margin="14,0,0,0"
+                                    Background="#1D243A"
+                                    CornerRadius="6"
+                                    Padding="8,3"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="Centro de Medios"
+                                           Foreground="#8B98BE"
+                                           FontSize="11"
+                                           FontWeight="SemiBold"/>
+                            </Border>
+                        </StackPanel>
+
+                        <Button HorizontalAlignment="Right"
+                                Content="☕ Invitar un Cafecito"
+                                Padding="12,7"
+                                ToolTip="Regálame un cafecito para seguir mejorándolo (cafecito.app/atomichead)"
+                                Style="{StaticResource CafecitoButtonStyle}"
+                                Click="DonateCafecitoButton_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- Contenido Central: Título y las 2 Tarjetas Principales -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="20,28">
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                MaxWidth="960">
+
+                        <TextBlock Text="¿Qué deseas hacer hoy?"
+                                   Foreground="#F1F4FD"
+                                   FontSize="26"
+                                   FontWeight="Bold"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,8"/>
+
+                        <TextBlock Text="Selecciona una opción para comenzar. Puedes regresar a este menú o alternar entre herramientas en cualquier momento."
+                                   Foreground="#8892AE"
+                                   FontSize="13.5"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"
+                                   Margin="0,0,0,30"/>
+
+                        <!-- Contenedor de las 2 Opciones en Paralelo -->
+                        <Grid Margin="0,0,0,24">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="22"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Tarjeta 1: Buscador Universal de Videos -->
+                            <Border Grid.Column="0"
+                                    Background="#121625"
+                                    BorderBrush="#252E47"
+                                    BorderThickness="1.5"
+                                    CornerRadius="16"
+                                    Padding="28,26"
+                                    Cursor="Hand"
+                                    MouseLeftButtonUp="HomeMenu_OpenSearch_Click">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="20" ShadowDepth="4" Color="#000000" Opacity="0.4"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Border Width="50" Height="50" CornerRadius="12" Background="#1D243B" BorderBrush="#3B466A" BorderThickness="1">
+                                            <TextBlock Text="🔍" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Margin="13,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="BUSCADOR" Foreground="#7C6BFF" FontSize="11" FontWeight="Bold"/>
+                                            <TextBlock Text="Multisitio Simultáneo" Foreground="#E2E7F5" FontSize="15" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Row="1"
+                                               Text="Buscador Universal de Videos"
+                                               Foreground="#FFFFFF"
+                                               FontSize="18.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <TextBlock Grid.Row="2"
+                                               Text="Explora y encuentra videos al mismo tiempo en YouTube, Twitch, TikTok, Instagram y Dailymotion. Incluye vista previa interactiva al pasar el mouse, selector de cuadrícula de 3, 4 o 6 columnas y reproductor limpio sin publicidad."
+                                               Foreground="#8F9BB9"
+                                               FontSize="13"
+                                               LineHeight="20"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,24"/>
+
+                                    <Button Grid.Row="3"
+                                            Content="🔍 Abrir Buscador Universal →"
+                                            FontSize="13"
+                                            FontWeight="SemiBold"
+                                            Padding="16,11"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Click="HomeMenu_OpenSearch_Click"/>
+                                </Grid>
+                            </Border>
+
+                            <!-- Tarjeta 2: Descargador Directo de Videos y Audio MP3 -->
+                            <Border Grid.Column="2"
+                                    Background="#121625"
+                                    BorderBrush="#252E47"
+                                    BorderThickness="1.5"
+                                    CornerRadius="16"
+                                    Padding="28,26"
+                                    Cursor="Hand"
+                                    MouseLeftButtonUp="HomeMenu_OpenDownloader_Click">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="20" ShadowDepth="4" Color="#000000" Opacity="0.4"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+                                        <Border Width="50" Height="50" CornerRadius="12" Background="#1B2637" BorderBrush="#25557E" BorderThickness="1">
+                                            <TextBlock Text="📥" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel Margin="13,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock Text="DESCARGAS" Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                                            <TextBlock Text="Video MP4 o Audio MP3" Foreground="#E2E7F5" FontSize="15" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <TextBlock Grid.Row="1"
+                                               Text="Descargador de Video y MP3"
+                                               Foreground="#FFFFFF"
+                                               FontSize="18.5"
+                                               FontWeight="Bold"
+                                               Margin="0,0,0,10"/>
+
+                                    <TextBlock Grid.Row="2"
+                                               Text="Pega el enlace directo de cualquier video de tus plataformas favoritas. Descarga el archivo de video en alta definición (1080p, 720p...) o extrae únicamente la pista de audio en formato MP3 de alta fidelidad."
+                                               Foreground="#8F9BB9"
+                                               FontSize="13"
+                                               LineHeight="20"
+                                               TextWrapping="Wrap"
+                                               Margin="0,0,0,24"/>
+
+                                    <Button Grid.Row="3"
+                                            Content="📥 Abrir Descargador →"
+                                            FontSize="13"
+                                            FontWeight="SemiBold"
+                                            Padding="16,11"
+                                            Style="{StaticResource PrimaryButtonStyle}"
+                                            Click="HomeMenu_OpenDownloader_Click"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <!-- Indicación de páginas soportadas en el Menú Inicial -->
+                        <Border Background="#0E121E"
+                                BorderBrush="#1F263C"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="16,11"
+                                HorizontalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Plataformas principales compatibles:"
+                                           Foreground="#7885A8"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,12,0"/>
+                                <Border Background="#2B1417" BorderBrush="#EF4444" BorderThickness="1" CornerRadius="5" Padding="7,2" Margin="3,0">
+                                    <TextBlock Text="YouTube" Foreground="#FCA5A5" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#211535" BorderBrush="#A855F7" BorderThickness="1" CornerRadius="5" Padding="7,2" Margin="3,0">
+                                    <TextBlock Text="Twitch" Foreground="#D8B4FE" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#102525" BorderBrush="#00E5D4" BorderThickness="1" CornerRadius="5" Padding="7,2" Margin="3,0">
+                                    <TextBlock Text="TikTok" Foreground="#5EEAD4" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#2D1525" BorderBrush="#E1306C" BorderThickness="1" CornerRadius="5" Padding="7,2" Margin="3,0">
+                                    <TextBlock Text="Instagram" Foreground="#F472B6" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                                <Border Background="#122037" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="5" Padding="7,2" Margin="3,0">
+                                    <TextBlock Text="Dailymotion" Foreground="#93C5FD" FontSize="11" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Pie del Menú Inicial -->
+                <Border Grid.Row="2"
+                        Background="#0C0F18"
+                        BorderBrush="#171C2D"
+                        BorderThickness="0,1,0,0"
+                        Padding="24,9">
+                    <Grid>
+                        <TextBlock Text="BUSCAPP • Buscador Universal y Descargador Multimedia"
+                                   Foreground="#545F7C"
+                                   FontSize="11.5"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="v1.2.0"
+                                   Foreground="#545F7C"
+                                   FontSize="11.5"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ==================== 2) ÁREA DEL BUSCADOR UNIVERSAL ==================== -->
+            <Grid x:Name="SearchAreaGrid" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="SidebarColumn" Width="340"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- ==================== PANEL LATERAL COLAPSABLE ==================== -->
+                <Border x:Name="SidebarBorder"
+                        Grid.Column="0"
+                        Background="#111522"
+                        BorderBrush="#20263B"
+                        BorderThickness="0,0,1,0"
+                        ClipToBounds="True">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="SidebarTranslate" X="0"/>
+                    </Border.RenderTransform>
 
                 <Grid Margin="15,13,15,14">
                     <Grid.RowDefinitions>
@@ -61,7 +299,6 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
@@ -386,40 +623,8 @@
                         </ScrollViewer>
                     </Grid>
 
-                    <!-- Apartado de Donaciones (Cafecito) -->
-                    <Border Grid.Row="5"
-                            Margin="0,10,0,0"
-                            Padding="11,9"
-                            CornerRadius="10"
-                            Background="#1B1718"
-                            BorderBrush="#5C3B1E"
-                            BorderThickness="1">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-
-                            <TextBlock Grid.Row="0"
-                                       Text="☕ Regálame un cafecito para seguir mejorándolo"
-                                       Foreground="#FDE68A"
-                                       FontSize="11.5"
-                                       FontWeight="SemiBold"
-                                       TextWrapping="Wrap"
-                                       Margin="0,0,0,7"/>
-
-                            <Button Grid.Row="1"
-                                    Content="☕ Invitar un Cafecito (cafecito.app/atomichead)"
-                                    FontSize="11.2"
-                                    Padding="8,6"
-                                    ToolTip="Abrir https://cafecito.app/atomichead en el navegador"
-                                    Style="{StaticResource CafecitoButtonStyle}"
-                                    Click="DonateCafecitoButton_Click"/>
-                        </Grid>
-                    </Border>
-
                     <!-- Estado de autoguardado -->
-                    <Border Grid.Row="6"
+                    <Border Grid.Row="5"
                             Margin="0,7,0,0"
                             Padding="10,7"
                             CornerRadius="8"
@@ -463,16 +668,35 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
-                        <!-- Botón mostrar/ocultar panel lateral -->
-                        <Button x:Name="TopToggleSidebarButton"
-                                Grid.Column="0"
-                                Margin="0,0,10,0"
-                                Content="☰"
-                                FontSize="15"
-                                Padding="11,7"
-                                ToolTip="Ocultar o mostrar el panel lateral de páginas (Ctrl+B)"
-                                Style="{StaticResource SecondaryButtonStyle}"
-                                Click="ToggleSidebarButton_Click"/>
+                        <!-- Navegación: Ocultar panel lateral, Ir a Menú Inicial, Ir a Descargas -->
+                        <StackPanel Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Margin="0,0,10,0">
+                            <Button x:Name="TopToggleSidebarButton"
+                                    Content="☰"
+                                    FontSize="15"
+                                    Padding="10,7"
+                                    ToolTip="Ocultar o mostrar el panel lateral de páginas (Ctrl+B)"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="ToggleSidebarButton_Click"/>
+
+                            <Button Content="🏠 Menú"
+                                    Margin="6,0,0,0"
+                                    Padding="9,7"
+                                    FontSize="12"
+                                    ToolTip="Volver al menú inicial de opciones"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="NavToHomeMenu_Click"/>
+
+                            <Button Content="📥 Descargas"
+                                    Margin="6,0,0,0"
+                                    Padding="9,7"
+                                    FontSize="12"
+                                    ToolTip="Abrir descargador de Video y MP3"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="NavToDownloaderArea_Click"/>
+                        </StackPanel>
 
                         <!-- Caja de Búsqueda con Historial Desplegable Integrado -->
                         <Grid x:Name="SearchInputContainer" Grid.Column="1">
@@ -743,60 +967,104 @@
                     </Grid>
                 </Border>
 
-                <!-- Barra de Filtros por Página -->
+                <!-- Barra de Filtros por Página + Selector de Cuadrícula -->
                 <Border x:Name="FilterBarBorder"
                         Grid.Row="2"
                         Background="#0F121D"
                         BorderBrush="#1C2236"
                         BorderThickness="0,0,0,1"
-                        Padding="20,9"
+                        Padding="20,7"
                         Visibility="Collapsed">
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                        <ItemsControl x:Name="FilterChipsItemsControl">
-                            <ItemsControl.ItemsPanel>
-                                <ItemsPanelTemplate>
-                                    <StackPanel Orientation="Horizontal"/>
-                                </ItemsPanelTemplate>
-                            </ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Margin="0,0,8,0"
-                                            Tag="{Binding SiteId}"
-                                            Cursor="Hand"
-                                            Click="FilterChip_Click">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="chipBd"
-                                                        CornerRadius="15"
-                                                        Padding="12,5"
-                                                        Background="#181D2E"
-                                                        BorderBrush="#2A324D"
-                                                        BorderThickness="1">
-                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <Ellipse Width="7" Height="7" Fill="{Binding AccentHex}" Margin="0,0,6,0"/>
-                                                        <TextBlock Text="{Binding Label}" Foreground="#EAEFF9" FontSize="12" FontWeight="SemiBold"/>
-                                                        <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" Foreground="#9AA4BF" FontSize="12"/>
-                                                    </StackPanel>
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
-                                                        <Setter TargetName="chipBd" Property="Background" Value="#362F78"/>
-                                                        <Setter TargetName="chipBd" Property="BorderBrush" Value="#7C6BFF"/>
-                                                    </DataTrigger>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="chipBd" Property="BorderBrush" Value="#6D5DFB"/>
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                    </Button>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="FilterChipsItemsControl">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Margin="0,0,8,0"
+                                                Tag="{Binding SiteId}"
+                                                Cursor="Hand"
+                                                Click="FilterChip_Click">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border x:Name="chipBd"
+                                                            CornerRadius="15"
+                                                            Padding="12,5"
+                                                            Background="#181D2E"
+                                                            BorderBrush="#2A324D"
+                                                            BorderThickness="1">
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Ellipse Width="7" Height="7" Fill="{Binding AccentHex}" Margin="0,0,6,0"/>
+                                                            <TextBlock Text="{Binding Label}" Foreground="#EAEFF9" FontSize="12" FontWeight="SemiBold"/>
+                                                            <TextBlock Text="{Binding Count, StringFormat=' ({0})'}" Foreground="#9AA4BF" FontSize="12"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                            <Setter TargetName="chipBd" Property="Background" Value="#362F78"/>
+                                                            <Setter TargetName="chipBd" Property="BorderBrush" Value="#7C6BFF"/>
+                                                        </DataTrigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter TargetName="chipBd" Property="BorderBrush" Value="#6D5DFB"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <!-- Selector de Cuadrícula (3, 4, 6 columnas) -->
+                        <Border Grid.Column="1"
+                                Margin="14,0,0,0"
+                                Background="#141824"
+                                BorderBrush="#252D42"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="4,2"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⊞ Cuadrícula:"
+                                           Foreground="#8E99B7"
+                                           FontSize="11.5"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Margin="5,0,6,0"/>
+                                <Button x:Name="GridCols3Btn"
+                                        Content="3"
+                                        Tag="3"
+                                        ToolTip="Ver 3 videos por fila (12 por página)"
+                                        Style="{StaticResource GridDensityButtonStyle}"
+                                        Click="GridDensityButton_Click"/>
+                                <Button x:Name="GridCols4Btn"
+                                        Content="4"
+                                        Tag="4"
+                                        ToolTip="Ver 4 videos por fila (16 por página)"
+                                        Style="{StaticResource GridDensityButtonStyle}"
+                                        Click="GridDensityButton_Click"/>
+                                <Button x:Name="GridCols6Btn"
+                                        Content="6"
+                                        Tag="6"
+                                        ToolTip="Ver 6 videos por fila (24 por página)"
+                                        Style="{StaticResource GridDensityButtonStyle}"
+                                        Click="GridDensityButton_Click"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </Border>
 
-                <!-- Contenido Central: Cuadrícula 3x4 (12 videos por página) -->
+                <!-- Contenido Central: Cuadrícula dinámica de videos -->
                 <Grid Grid.Row="3">
                     <ScrollViewer x:Name="GridScrollViewer"
                                   VerticalScrollBarVisibility="Auto"
@@ -805,7 +1073,7 @@
                         <ItemsControl x:Name="VideosGridItemsControl">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
-                                    <UniformGrid Columns="3" VerticalAlignment="Top"/>
+                                    <UniformGrid Columns="{Binding SelectedGridColumns, RelativeSource={RelativeSource AncestorType=Window}}" VerticalAlignment="Top"/>
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
@@ -914,7 +1182,7 @@
                     </Border>
                 </Grid>
 
-                <!-- Barra Inferior de Paginación Dinámica (12 videos por página) -->
+                <!-- Barra Inferior de Paginación Dinámica -->
                 <Border x:Name="PaginationBarBorder"
                         Grid.Row="4"
                         Background="#111522"
@@ -926,6 +1194,7 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
 
                         <TextBlock x:Name="PaginationSummaryText"
@@ -934,7 +1203,44 @@
                                    FontSize="12.5"
                                    VerticalAlignment="Center"/>
 
-                        <StackPanel Grid.Column="1"
+                        <!-- Selector de Cuadrícula en Barra Inferior -->
+                        <Border Grid.Column="1"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="#141824"
+                                BorderBrush="#252D42"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="4,2">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="⊞ Cuadrícula:"
+                                           Foreground="#8E99B7"
+                                           FontSize="11.5"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Margin="5,0,6,0"/>
+                                <Button x:Name="BottomGridCols3Btn"
+                                        Content="3"
+                                        Tag="3"
+                                        ToolTip="Ver 3 videos por fila (12 por página)"
+                                        Style="{StaticResource GridDensityButtonStyle}"
+                                        Click="GridDensityButton_Click"/>
+                                <Button x:Name="BottomGridCols4Btn"
+                                        Content="4"
+                                        Tag="4"
+                                        ToolTip="Ver 4 videos por fila (16 por página)"
+                                        Style="{StaticResource GridDensityButtonStyle}"
+                                        Click="GridDensityButton_Click"/>
+                                <Button x:Name="BottomGridCols6Btn"
+                                        Content="6"
+                                        Tag="6"
+                                        ToolTip="Ver 6 videos por fila (24 por página)"
+                                        Style="{StaticResource GridDensityButtonStyle}"
+                                        Click="GridDensityButton_Click"/>
+                            </StackPanel>
+                        </Border>
+
+                        <StackPanel Grid.Column="2"
                                     Orientation="Horizontal"
                                     HorizontalAlignment="Right"
                                     VerticalAlignment="Center">
@@ -1011,6 +1317,541 @@
                         </StackPanel>
                     </Grid>
                 </Border>
+            </Grid>
+            <!-- Fin de SearchAreaGrid -->
+        </Grid>
+
+            <!-- ==================== 3) ÁREA DEDICADA DE DESCARGAS (VIDEO MP4 & AUDIO MP3) ==================== -->
+            <Grid x:Name="DownloaderAreaGrid" Visibility="Collapsed">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Barra Superior de Navegación del Descargador -->
+                <Border Grid.Row="0"
+                        Background="#101422"
+                        BorderBrush="#1D243A"
+                        BorderThickness="0,0,0,1"
+                        Padding="22,12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Botones de Navegación: Regresar al Menú Inicial y al Buscador -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="🏠 Menú Inicial"
+                                    Padding="11,7"
+                                    Margin="0,0,8,0"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    ToolTip="Volver a la pantalla de bienvenida y menú inicial"
+                                    Click="NavToHomeMenu_Click"/>
+
+                            <Button Content="🔍 Ir al Buscador"
+                                    Padding="11,7"
+                                    Style="{StaticResource SecondaryButtonStyle}"
+                                    ToolTip="Ir a la cuadrícula de búsqueda de videos"
+                                    Click="NavToSearchArea_Click"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="📥 Descargador Universal de Videos y MP3"
+                                       Foreground="#EEF2FC"
+                                       FontSize="15"
+                                       FontWeight="Bold"/>
+                        </StackPanel>
+
+                        <Button Grid.Column="2"
+                                Content="☕"
+                                Padding="10,7"
+                                ToolTip="Regálame un cafecito (cafecito.app/atomichead)"
+                                Style="{StaticResource CafecitoButtonStyle}"
+                                Click="DonateCafecitoButton_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- Contenido Principal del Descargador -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="24,20">
+                    <StackPanel MaxWidth="820" HorizontalAlignment="Center">
+
+                        <!-- Tarjeta de Páginas Soportadas Específicamente (sin mención de NSFW) -->
+                        <Border Background="#131726"
+                                BorderBrush="#242C44"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="18,14"
+                                Margin="0,0,0,18">
+                            <StackPanel>
+                                <TextBlock Text="🌐 Plataformas soportadas específicamente para descarga:"
+                                           Foreground="#AEB7D2"
+                                           FontSize="12.5"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,10"/>
+
+                                <WrapPanel>
+                                    <Border Background="#1E1318" BorderBrush="#EF4444" BorderThickness="1" CornerRadius="7" Padding="10,6" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🔴" FontSize="11" Margin="0,0,5,0"/>
+                                            <TextBlock Text="YouTube" Foreground="#FCA5A5" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text=" (Videos, Shorts)" Foreground="#9AA4BF" FontSize="11.5" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Background="#1B142A" BorderBrush="#9146FF" BorderThickness="1" CornerRadius="7" Padding="10,6" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🟣" FontSize="11" Margin="0,0,5,0"/>
+                                            <TextBlock Text="Twitch" Foreground="#D8B4FE" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text=" (Clips, VODs)" Foreground="#9AA4BF" FontSize="11.5" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Background="#0E2122" BorderBrush="#00E5D4" BorderThickness="1" CornerRadius="7" Padding="10,6" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="⚫" FontSize="11" Margin="0,0,5,0"/>
+                                            <TextBlock Text="TikTok" Foreground="#5EEAD4" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text=" (Videos y clips)" Foreground="#9AA4BF" FontSize="11.5" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Background="#261222" BorderBrush="#E1306C" BorderThickness="1" CornerRadius="7" Padding="10,6" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🟠" FontSize="11" Margin="0,0,5,0"/>
+                                            <TextBlock Text="Instagram" Foreground="#F472B6" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text=" (Reels, Posts)" Foreground="#9AA4BF" FontSize="11.5" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <Border Background="#111B2C" BorderBrush="#2F80ED" BorderThickness="1" CornerRadius="7" Padding="10,6" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🔵" FontSize="11" Margin="0,0,5,0"/>
+                                            <TextBlock Text="Dailymotion" Foreground="#93C5FD" FontSize="12" FontWeight="Bold"/>
+                                            <TextBlock Text=" (Videos Full HD)" Foreground="#9AA4BF" FontSize="11.5" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                </WrapPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Tarjeta de Ingreso de Enlace y Opciones -->
+                        <Border Background="#131726"
+                                BorderBrush="#242C44"
+                                BorderThickness="1.5"
+                                CornerRadius="14"
+                                Padding="24,20"
+                                Margin="0,0,0,18">
+                            <StackPanel>
+                                <TextBlock Text="Enlace del video a descargar:"
+                                           Foreground="#E3E8F5"
+                                           FontSize="13.5"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,7"/>
+
+                                <Grid Margin="0,0,0,14">
+                                    <TextBox x:Name="DownloaderUrlTextBox"
+                                             Style="{StaticResource ModernTextBoxStyle}"
+                                             FontSize="13.5"
+                                             Padding="12,10,95,10"
+                                             KeyDown="DownloaderUrlTextBox_KeyDown"
+                                             TextChanged="DownloaderUrlTextBox_TextChanged"/>
+
+                                    <TextBlock Text="Pega aquí el enlace https://... del video"
+                                               Foreground="#636D8A"
+                                               FontSize="13"
+                                               Margin="14,0,100,0"
+                                               VerticalAlignment="Center"
+                                               IsHitTestVisible="False">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Text, ElementName=DownloaderUrlTextBox}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <!-- Botones pegar y limpiar -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,8,0">
+                                        <Button x:Name="DownloaderClearUrlBtn"
+                                                Content="✕"
+                                                Width="26"
+                                                Height="26"
+                                                FontSize="11"
+                                                Visibility="Collapsed"
+                                                ToolTip="Limpiar enlace"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Click="DownloaderClearUrlBtn_Click"/>
+
+                                        <Button Content="📋 Pegar"
+                                                Padding="8,4"
+                                                FontSize="11.5"
+                                                ToolTip="Pegar enlace copiado en el portapapeles"
+                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                Click="DownloaderPasteUrlBtn_Click"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Detección de Plataforma según la URL escrita -->
+                                <Border x:Name="DownloaderDetectedPlatformBorder"
+                                        Background="#181F33"
+                                        BorderBrush="#2C3756"
+                                        BorderThickness="1"
+                                        CornerRadius="7"
+                                        Padding="10,6"
+                                        Margin="0,0,0,14"
+                                        Visibility="Collapsed">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="✓ Plataforma detectada: " Foreground="#8B97BC" FontSize="12"/>
+                                        <TextBlock x:Name="DownloaderDetectedPlatformText" Text="YouTube" Foreground="#A78BFA" FontSize="12" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Selección de Formato: Video (MP4) o Audio (MP3) -->
+                                <TextBlock Text="Selecciona qué deseas descargar:"
+                                           Foreground="#E3E8F5"
+                                           FontSize="13.5"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,9"/>
+
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Opción Video MP4 -->
+                                    <RadioButton x:Name="DownloaderFormatVideoRadio"
+                                                 Grid.Column="0"
+                                                 GroupName="DownloaderFormat"
+                                                 IsChecked="True"
+                                                 Checked="DownloaderFormatRadio_Checked">
+                                        <RadioButton.Template>
+                                            <ControlTemplate TargetType="RadioButton">
+                                                <Border x:Name="fmtBd"
+                                                        Background="#181D2E"
+                                                        BorderBrush="#2F3957"
+                                                        BorderThickness="1.5"
+                                                        CornerRadius="10"
+                                                        Padding="16,13"
+                                                        Cursor="Hand">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock Text="🎥" FontSize="18" Margin="0,0,8,0"/>
+                                                            <TextBlock Text="Video Completo (MP4)" Foreground="#FFFFFF" FontSize="13.5" FontWeight="Bold"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="Descarga el video con audio en alta resolución" Foreground="#8B97BC" FontSize="11.5" Margin="26,4,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter TargetName="fmtBd" Property="Background" Value="#25244E"/>
+                                                        <Setter TargetName="fmtBd" Property="BorderBrush" Value="#7C6BFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="fmtBd" Property="BorderBrush" Value="#9487FF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </RadioButton.Template>
+                                    </RadioButton>
+
+                                    <!-- Opción Audio MP3 -->
+                                    <RadioButton x:Name="DownloaderFormatAudioRadio"
+                                                 Grid.Column="2"
+                                                 GroupName="DownloaderFormat"
+                                                 Checked="DownloaderFormatRadio_Checked">
+                                        <RadioButton.Template>
+                                            <ControlTemplate TargetType="RadioButton">
+                                                <Border x:Name="fmtBd"
+                                                        Background="#181D2E"
+                                                        BorderBrush="#2F3957"
+                                                        BorderThickness="1.5"
+                                                        CornerRadius="10"
+                                                        Padding="16,13"
+                                                        Cursor="Hand">
+                                                    <StackPanel>
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock Text="🎵" FontSize="18" Margin="0,0,8,0"/>
+                                                            <TextBlock Text="Solo Audio (MP3)" Foreground="#FFFFFF" FontSize="13.5" FontWeight="Bold"/>
+                                                        </StackPanel>
+                                                        <TextBlock Text="Extrae la pista de sonido en MP3 de alta fidelidad" Foreground="#8B97BC" FontSize="11.5" Margin="26,4,0,0"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter TargetName="fmtBd" Property="Background" Value="#172F3E"/>
+                                                        <Setter TargetName="fmtBd" Property="BorderBrush" Value="#38BDF8"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="fmtBd" Property="BorderBrush" Value="#7DD3FC"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </RadioButton.Template>
+                                    </RadioButton>
+                                </Grid>
+
+                                <!-- Opciones secundarias: Calidad de Video y Carpeta de Destino -->
+                                <Grid Margin="0,0,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="14"/>
+                                        <ColumnDefinition Width="1.4*"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Selector de Calidad (solo activo si formato es Video) -->
+                                    <StackPanel x:Name="DownloaderQualityPanel" Grid.Column="0">
+                                        <TextBlock Text="Calidad de video:" Foreground="#AEB7D2" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                        <ComboBox x:Name="DownloaderQualityComboBox"
+                                                  Style="{StaticResource ModernComboBoxStyle}"
+                                                  Height="36"
+                                                  FontSize="12.5"/>
+                                    </StackPanel>
+
+                                    <!-- Panel informativo para MP3 -->
+                                    <StackPanel x:Name="DownloaderAudioInfoPanel" Grid.Column="0" Visibility="Collapsed">
+                                        <TextBlock Text="Calidad de audio:" Foreground="#AEB7D2" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                        <Border Background="#141824" BorderBrush="#252E46" BorderThickness="1" CornerRadius="8" Height="36" Padding="10,0">
+                                            <TextBlock Text="MP3 Máxima Calidad (V0 / 320 kbps)" Foreground="#38BDF8" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Carpeta de Descargas -->
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Carpeta de destino:" Foreground="#AEB7D2" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                                        <Grid>
+                                            <TextBox x:Name="DownloaderFolderTextBox"
+                                                     Style="{StaticResource ModernTextBoxStyle}"
+                                                     Height="36"
+                                                     FontSize="12"
+                                                     Padding="10,8,75,8"
+                                                     IsReadOnly="True"/>
+                                            <Button Content="📁 Cambiar"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    Margin="0,0,5,0"
+                                                    Padding="8,5"
+                                                    FontSize="11"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Click="DownloaderBrowseFolderBtn_Click"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- Botón Principal de Descarga -->
+                                <Button x:Name="DownloaderStartButton"
+                                        Content="⬇ Iniciar Descarga"
+                                        FontSize="14"
+                                        FontWeight="Bold"
+                                        Padding="20,12"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Click="DownloaderStartButton_Click"/>
+
+                                <!-- Barra y Estado de Progreso de Descarga en Vivo -->
+                                <Border x:Name="DownloaderProgressBorder"
+                                        Margin="0,16,0,0"
+                                        Background="#101524"
+                                        BorderBrush="#252F4A"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="16,13"
+                                        Visibility="Collapsed">
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,8">
+                                            <TextBlock x:Name="DownloaderProgressStatusText"
+                                                       Text="Conectando y analizando video..."
+                                                       Foreground="#F0F4FD"
+                                                       FontSize="12.5"
+                                                       FontWeight="SemiBold"
+                                                       VerticalAlignment="Center"/>
+                                            <Button x:Name="DownloaderCancelButton"
+                                                    HorizontalAlignment="Right"
+                                                    Content="Cancelar"
+                                                    FontSize="11"
+                                                    Padding="8,4"
+                                                    Style="{StaticResource DangerButtonStyle}"
+                                                    Click="DownloaderCancelButton_Click"/>
+                                        </Grid>
+
+                                        <ProgressBar x:Name="DownloaderProgressBar"
+                                                     Height="8"
+                                                     Minimum="0"
+                                                     Maximum="100"
+                                                     Value="0"
+                                                     Background="#1D243A"
+                                                     Foreground="#7C6BFF"
+                                                     BorderThickness="0"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Cartel de Resultado / Éxito -->
+                                <Border x:Name="DownloaderSuccessBorder"
+                                        Margin="0,14,0,0"
+                                        Background="#0F2821"
+                                        BorderBrush="#10B981"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="16,13"
+                                        Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                            <TextBlock Text="✓ Descarga completada con éxito"
+                                                       Foreground="#A7F3D0"
+                                                       FontSize="13"
+                                                       FontWeight="Bold"/>
+                                            <TextBlock x:Name="DownloaderSuccessFileNameText"
+                                                       Text="video.mp4"
+                                                       Foreground="#E6FFFA"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,3,0,0"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Content="▶ Reproducir / Abrir"
+                                                    Padding="10,6"
+                                                    FontSize="11.5"
+                                                    Margin="0,0,6,0"
+                                                    Style="{StaticResource PrimaryButtonStyle}"
+                                                    Click="DownloaderOpenCompletedFileBtn_Click"/>
+
+                                            <Button Content="📂 Abrir carpeta"
+                                                    Padding="10,6"
+                                                    FontSize="11.5"
+                                                    Style="{StaticResource SecondaryButtonStyle}"
+                                                    Click="DownloaderOpenCompletedFolderBtn_Click"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Cartel de Error -->
+                                <Border x:Name="DownloaderErrorBorder"
+                                        Margin="0,14,0,0"
+                                        Background="#2B141B"
+                                        BorderBrush="#EF4444"
+                                        BorderThickness="1"
+                                        CornerRadius="10"
+                                        Padding="16,12"
+                                        Visibility="Collapsed">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="DownloaderErrorText"
+                                                   Grid.Column="0"
+                                                   Foreground="#FECDD3"
+                                                   FontSize="12"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1"
+                                                Content="✕"
+                                                Width="22"
+                                                Height="22"
+                                                Margin="8,0,0,0"
+                                                Style="{StaticResource IconButtonStyle}"
+                                                Click="DownloaderDismissErrorBtn_Click"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Historial de Descargas Recientes de la Sesión -->
+                        <Border x:Name="DownloaderRecentSectionBorder"
+                                Background="#101422"
+                                BorderBrush="#1F263C"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="18,14"
+                                Margin="0,0,0,20"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock Text="📁 Descargas completadas en esta sesión:"
+                                           Foreground="#8F9CBF"
+                                           FontSize="12.5"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,10"/>
+
+                                <ItemsControl x:Name="DownloaderRecentItemsControl">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="#141928"
+                                                    BorderBrush="#252F47"
+                                                    BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Padding="12,8"
+                                                    Margin="0,0,0,6">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="0"
+                                                            Background="#1F2942"
+                                                            CornerRadius="5"
+                                                            Padding="6,2"
+                                                            Margin="0,0,10,0"
+                                                            VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding FormatType}"
+                                                                   Foreground="#A5B4FC"
+                                                                   FontSize="11"
+                                                                   FontWeight="Bold"/>
+                                                    </Border>
+
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding FileName}"
+                                                                   Foreground="#EEF2FC"
+                                                                   FontSize="12"
+                                                                   FontWeight="SemiBold"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding Timestamp}"
+                                                                   Foreground="#6E7B9E"
+                                                                   FontSize="10.5"/>
+                                                    </StackPanel>
+
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <Button Content="▶"
+                                                                ToolTip="Abrir archivo"
+                                                                Tag="{Binding FilePath}"
+                                                                Padding="8,4"
+                                                                Margin="0,0,4,0"
+                                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                                Click="RecentDownloadOpenFile_Click"/>
+                                                        <Button Content="📂"
+                                                                ToolTip="Ver en carpeta"
+                                                                Tag="{Binding FilePath}"
+                                                                Padding="8,4"
+                                                                Style="{StaticResource SecondaryButtonStyle}"
+                                                                Click="RecentDownloadOpenFolder_Click"/>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
             </Grid>
         </Grid>
 

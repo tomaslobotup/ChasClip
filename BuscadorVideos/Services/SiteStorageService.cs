@@ -34,29 +34,23 @@ public class SiteStorageService
 
     /// <summary>
     /// Crea la lista predeterminada de buscadores de video probados y funcionales.
+    /// Plataformas permitidas: YouTube, Twitch, TikTok, Instagram y Dailymotion.
     /// </summary>
     public static List<SavedSite> CreateDefaultVerifiedSites()
     {
         var youtube = SavedSite.Create("YouTube", "https://www.youtube.com");
-        var dailymotion = SavedSite.Create("Dailymotion", "https://www.dailymotion.com");
-        var tiktok = SavedSite.Create("TikTok", "https://www.tiktok.com");
-        var vimeo = SavedSite.Create("Vimeo", "https://vimeo.com");
-        var bilibili = SavedSite.Create("Bilibili", "https://www.bilibili.com");
-        var rumble = SavedSite.Create("Rumble", "https://rumble.com");
-        var reddit = SavedSite.Create("Reddit Videos", "https://www.reddit.com");
         var twitch = SavedSite.Create("Twitch", "https://www.twitch.tv");
+        var tiktok = SavedSite.Create("TikTok", "https://www.tiktok.com");
+        var instagram = SavedSite.Create("Instagram", "https://www.instagram.com");
+        var dailymotion = SavedSite.Create("Dailymotion", "https://www.dailymotion.com");
 
-        // Dejar activas las plataformas principales de respuesta rápida y disponibles las adicionales a un clic
         youtube.IsEnabled = true;
-        dailymotion.IsEnabled = true;
+        twitch.IsEnabled = true;
         tiktok.IsEnabled = true;
-        vimeo.IsEnabled = true;
-        bilibili.IsEnabled = false;
-        rumble.IsEnabled = false;
-        reddit.IsEnabled = false;
-        twitch.IsEnabled = false;
+        instagram.IsEnabled = true;
+        dailymotion.IsEnabled = true;
 
-        return [youtube, dailymotion, tiktok, vimeo, bilibili, rumble, reddit, twitch];
+        return [youtube, twitch, tiktok, instagram, dailymotion];
     }
 
     public List<SavedSite> LoadSites(bool forceSeedIfEmpty = false)
@@ -76,7 +70,41 @@ public class SiteStorageService
                     var json = File.ReadAllText(pathToRead);
                     var sites = JsonSerializer.Deserialize<List<SavedSite>>(json, JsonOptions);
                     if (sites != null && (!forceSeedIfEmpty || sites.Count > 0))
+                    {
+                        // Limpiar plataformas obsoletas no solicitadas (Vimeo, Bilibili, Rumble, Reddit)
+                        bool modified = sites.RemoveAll(s =>
+                        {
+                            var r = s.RootDomain.ToLowerInvariant();
+                            return r is "vimeo.com" or "bilibili.com" or "rumble.com" or "reddit.com";
+                        }) > 0;
+
+                        // Asegurar que Instagram esté presente
+                        if (!sites.Any(s => s.RootDomain.Equals("instagram.com", StringComparison.OrdinalIgnoreCase)))
+                        {
+                            var insta = SavedSite.Create("Instagram", "https://www.instagram.com");
+                            insta.IsEnabled = true;
+                            sites.Add(insta);
+                            modified = true;
+                        }
+
+                        // Asegurar que las plataformas permitidas principales existan
+                        var defaults = CreateDefaultVerifiedSites();
+                        foreach (var def in defaults)
+                        {
+                            if (!sites.Any(s => s.RootDomain.Equals(def.RootDomain, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                sites.Add(def);
+                                modified = true;
+                            }
+                        }
+
+                        if (modified)
+                        {
+                            SaveSites(sites);
+                        }
+
                         return sites;
+                    }
                 }
                 catch
                 {
@@ -84,9 +112,9 @@ public class SiteStorageService
                 }
             }
 
-            var defaults = CreateDefaultVerifiedSites();
-            SaveSites(defaults);
-            return defaults;
+            var newDefaults = CreateDefaultVerifiedSites();
+            SaveSites(newDefaults);
+            return newDefaults;
         }
     }
 

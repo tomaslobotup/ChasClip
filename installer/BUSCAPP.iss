@@ -1,6 +1,6 @@
-; Script de instalación de Inno Setup 6 para BUSCAPP
+﻿; Script de instalaciÃ³n de Inno Setup 6 para BUSCAPP
 #define MyAppName "BUSCAPP"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "tomaslobotup"
 #define MyAppURL "https://github.com/tomaslobotup/BUSCAPP"
 #define MyAppSupportURL "https://cafecito.app/atomichead"
@@ -24,7 +24,7 @@ OutputDir=..\dist
 OutputBaseFilename=BUSCAPP-Setup
 SetupIconFile=..\BuscadorVideos\Assets\logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-UninstallDisplayName={#MyAppName} — Buscador Universal de Videos
+UninstallDisplayName={#MyAppName} â€” Buscador Universal de Videos
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
