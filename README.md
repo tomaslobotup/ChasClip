@@ -18,7 +18,6 @@ No necesitas compilar código ni instalar dependencias para usar **ChasClip**:
 > **Requisito del sistema:** Windows 10 o Windows 11 (64-bit).
 
 ---
-
 ## ☕ Apoyar el Proyecto
 
 Si **ChasClip** te resulta útil y quieres apoyar su desarrollo continuo:
