@@ -145,6 +145,8 @@
 
     const backend = getBackendUrl();
 
+    let lastBackendError = null;
+
     // 1) Intentar mediante el backend de ChasClip API (Render)
     if (backend) {
       try {
@@ -187,6 +189,7 @@
         setDownloadButtonsState(false);
         return;
       } catch (err) {
+        lastBackendError = err.message || "Error al conectar con el backend de Render";
         console.warn("Error en backend propio, intentando fallback:", err);
       }
     }
@@ -247,10 +250,14 @@
 
     // Si falló todo
     setDownloadButtonsState(false);
-    setStatus(
-      "No se pudo completar la descarga en la web debido a bloqueos de la plataforma. Para descargar sin limitaciones, utiliza la aplicación de escritorio ChasClip para Windows.",
-      "error"
-    );
+    if (lastBackendError) {
+      setStatus(`Aviso del servidor: ${lastBackendError}`, "error");
+    } else {
+      setStatus(
+        "No se pudo completar la descarga en la web debido a bloqueos de la plataforma. Para descargar sin limitaciones, utiliza la aplicación de escritorio ChasClip para Windows.",
+        "error"
+      );
+    }
   }
 
   // Event Listeners

@@ -32,7 +32,11 @@ def cleanup_file(path: str):
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "ChasClip Web API"}
+    return {
+        "status": "ok",
+        "service": "ChasClip Web API",
+        "yt_dlp_version": getattr(yt_dlp.version, "__version__", "unknown"),
+    }
 
 
 @app.get("/api/info")
