@@ -15,7 +15,7 @@ No necesitas compilar código ni instalar dependencias para usar **ChasClip**:
 2. Ejecuta el instalador **`ChasClip-Setup.exe`** y sigue el asistente.
 3. Abre **ChasClip** desde el acceso directo creado en tu **Escritorio** o en el **Menú Inicio**.
 
-> **Requisito del sistema:** Windows 10 o Windows 11 (64-bit) con *Microsoft Edge WebView2* (incluido de serie en Windows 10 y 11).
+> **Requisito del sistema:** Windows 10 o Windows 11 (64-bit).
 
 ---
 
