@@ -20,5 +20,5 @@ public class SiteFilterChip
     public string Label { get; init; } = string.Empty;
     public int Count { get; init; }
     public bool IsSelected { get; init; }
-    public string AccentHex { get; init; } = "#7C5CFF";
+    public string AccentHex { get; init; } = Services.AppThemeService.PaletteAccentHex;
 }

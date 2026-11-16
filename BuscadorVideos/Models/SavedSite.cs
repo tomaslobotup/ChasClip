@@ -210,20 +210,6 @@ public class SavedSite : INotifyPropertyChanged
 
     public static string GetAccentColorForDomain(string domain)
     {
-        var d = (domain ?? string.Empty).ToLowerInvariant();
-        if (d.Contains("youtube") || d.Contains("youtu.be")) return "#FF2E4C";
-        if (d.Contains("tiktok")) return "#00E5D4";
-        if (d.Contains("instagram")) return "#E1306C";
-        if (d.Contains("dailymotion")) return "#2F80ED";
-        if (d.Contains("vimeo")) return "#1AB7EA";
-        if (d.Contains("twitch")) return "#9146FF";
-        if (d.Contains("bilibili")) return "#00A1D6";
-        if (d.Contains("rumble")) return "#85C742";
-        if (d.Contains("reddit")) return "#FF5722";
-        if (d.Contains("pornhub")) return "#FF9900";
-        if (d.Contains("xvideos")) return "#E03131";
-        if (d.Contains("xnxx")) return "#3B82F6";
-        if (d.Contains("xhamster")) return "#F43F5E";
-        return "#7C5CFF";
+        return Services.AppThemeService.PaletteNeutralHex;
     }
 }

@@ -1,10 +1,10 @@
-; Script de instalaciÃ³n de Inno Setup 6 para BUSCAPP
-#define MyAppName "BUSCAPP"
+; Script de instalacion de Inno Setup 6 para ChasClip
+#define MyAppName "ChasClip"
 #define MyAppVersion "1.3.0"
 #define MyAppPublisher "tomaslobotup"
 #define MyAppURL "https://github.com/tomaslobotup/BUSCAPP"
 #define MyAppSupportURL "https://cafecito.app/atomichead"
-#define MyAppExeName "BUSCAPP.exe"
+#define MyAppExeName "ChasClip.exe"
 
 [Setup]
 AppId={{8E4C7D29-53A1-4F7B-9C64-2B8E10A95F3D}
@@ -21,10 +21,10 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=..\dist
-OutputBaseFilename=BUSCAPP-Setup
+OutputBaseFilename=ChasClip-Setup
 SetupIconFile=..\BuscadorVideos\Assets\logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-UninstallDisplayName={#MyAppName} â€” Buscador Universal de Videos
+UninstallDisplayName={#MyAppName} — Descargador Universal Multimedia
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

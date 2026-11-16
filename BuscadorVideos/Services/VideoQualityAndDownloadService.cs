@@ -42,6 +42,14 @@ public class VideoQualityAndDownloadService
         @"dailymotion\.com/(?:video/|embed/video/|player\.html\?video=)([a-zA-Z0-9]+)",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    private static readonly Regex FfmpegDurationRegex = new(
+        @"Duration:\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)",
+        RegexOptions.Compiled);
+
+    private static readonly Regex FfmpegTimeRegex = new(
+        @"time=\s*(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)",
+        RegexOptions.Compiled);
+
     private readonly string _toolsDir;
     private string? _cachedFfmpegPath;
 
@@ -525,7 +533,17 @@ public class VideoQualityAndDownloadService
         // 1) Si FFmpeg está instalado en el sistema, remuxear limpiamente a contenedor MP4 nativo sin recodificar
         if (!string.IsNullOrWhiteSpace(ffmpegPath))
         {
-            var headersArg = $"Referer: {referer}\r\nUser-Agent: {HttpHelper.BrowserUserAgent}\r\nCookie: {cookies}\r\n";
+            var origin = Uri.TryCreate(stream.Url, UriKind.Absolute, out var sUri)
+                ? $"{sUri.Scheme}://{sUri.Authority}"
+                : "https://www.google.com";
+            var headersSb = new StringBuilder();
+            headersSb.Append($"Origin: {origin}\r\n");
+            if (!string.IsNullOrWhiteSpace(referer))
+                headersSb.Append($"Referer: {referer}\r\n");
+            if (!string.IsNullOrWhiteSpace(cookies))
+                headersSb.Append($"Cookie: {cookies}\r\n");
+            headersSb.Append("Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: cors\r\nSec-Fetch-Dest: empty\r\n");
+
             var psi = new ProcessStartInfo
             {
                 FileName = ffmpegPath,
@@ -535,14 +553,20 @@ public class VideoQualityAndDownloadService
                 RedirectStandardOutput = true
             };
             psi.ArgumentList.Add("-y");
+            psi.ArgumentList.Add("-extension_picky");
+            psi.ArgumentList.Add("0");
+            psi.ArgumentList.Add("-allowed_extensions");
+            psi.ArgumentList.Add("ALL");
+            psi.ArgumentList.Add("-protocol_whitelist");
+            psi.ArgumentList.Add("file,http,https,tcp,tls,crypto");
+            psi.ArgumentList.Add("-user_agent");
+            psi.ArgumentList.Add(HttpHelper.BrowserUserAgent);
             psi.ArgumentList.Add("-headers");
-            psi.ArgumentList.Add(headersArg);
+            psi.ArgumentList.Add(headersSb.ToString());
             psi.ArgumentList.Add("-i");
             psi.ArgumentList.Add(stream.Url);
             psi.ArgumentList.Add("-c");
             psi.ArgumentList.Add("copy");
-            psi.ArgumentList.Add("-bsf:a");
-            psi.ArgumentList.Add("aac_adtstoasc");
             psi.ArgumentList.Add(destinationPath);
 
             using var proc = Process.Start(psi);
@@ -815,7 +839,7 @@ public class VideoQualityAndDownloadService
 
     /// <summary>
     /// Descarga un video o extrae audio MP3 directamente a partir de cualquier enlace web compatible
-    /// (YouTube, Twitch, TikTok, Instagram, Dailymotion o enlace directo de video).
+    /// (YouTube, Twitch, TikTok, Instagram, Dailymotion, o flujos HLS .m3u8 / /m3u8/ / MP4 / WebM capturados por el sniffer).
     /// </summary>
     public async Task<string> DownloadDirectUrlAsync(
         string url,
@@ -824,12 +848,48 @@ public class VideoQualityAndDownloadService
         string targetDirectory,
         IProgress<(double Percent, string Status)> progress,
         CancellationToken ct,
-        bool isPlaylist = false)
+        bool isPlaylist = false,
+        string? customTitle = null,
+        string? customReferer = null,
+        string? customOrigin = null,
+        string? customCookies = null,
+        string? pageUrl = null,
+        bool isHlsStream = false)
     {
         var ytDlpPath = await EnsureYtDlpExecutableAsync(progress, ct);
         var ffmpegPath = await EnsureFfmpegExecutableAsync(progress, ct);
 
         Directory.CreateDirectory(targetDirectory);
+
+        var cleanUrl = url.Trim();
+        bool looksLikeHls = isHlsStream ||
+                            cleanUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                            cleanUrl.Contains("/m3u8/", StringComparison.OrdinalIgnoreCase) ||
+                            cleanUrl.Contains("/hls/", StringComparison.OrdinalIgnoreCase);
+
+        bool looksLikeDirectMediaFile = Regex.IsMatch(cleanUrl, @"\.(mp4|webm|mkv|mov)(\?|$)", RegexOptions.IgnoreCase);
+        bool isNativeYtDlpPlatform = IsPlatformRequiringUniversalExtractor(cleanUrl);
+
+        // Si es un flujo HLS (.m3u8 / /m3u8/) o archivo directo (.mp4/.webm) capturado por el sniffer en sitios de anime/películas/etc.
+        if (!isPlaylist && !isNativeYtDlpPlatform && (looksLikeHls || looksLikeDirectMediaFile))
+        {
+            var directResult = await TryDownloadSniffedStreamAsync(
+                cleanUrl,
+                isAudioOnlyMp3,
+                selectedQuality,
+                targetDirectory,
+                ffmpegPath,
+                customTitle,
+                customReferer,
+                customOrigin,
+                customCookies,
+                looksLikeHls,
+                progress,
+                ct);
+
+            if (!string.IsNullOrWhiteSpace(directResult) && File.Exists(directResult) && new FileInfo(directResult).Length > 10_000)
+                return directResult;
+        }
 
         var psi = new ProcessStartInfo
         {
@@ -856,8 +916,15 @@ public class VideoQualityAndDownloadService
         psi.ArgumentList.Add("--user-agent");
         psi.ArgumentList.Add(HttpHelper.BrowserUserAgent);
 
-        var cleanUrl = url.Trim();
-        if (cleanUrl.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase))
+        if (customReferer != null)
+        {
+            if (!string.IsNullOrWhiteSpace(customReferer))
+            {
+                psi.ArgumentList.Add("--referer");
+                psi.ArgumentList.Add(customReferer);
+            }
+        }
+        else if (cleanUrl.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase))
         {
             psi.ArgumentList.Add("--referer");
             psi.ArgumentList.Add("https://www.dailymotion.com/");
@@ -877,10 +944,21 @@ public class VideoQualityAndDownloadService
             psi.ArgumentList.Add("--referer");
             psi.ArgumentList.Add("https://www.twitch.tv/");
         }
+        else if (!string.IsNullOrWhiteSpace(pageUrl))
+        {
+            psi.ArgumentList.Add("--referer");
+            psi.ArgumentList.Add(pageUrl);
+        }
         else
         {
             psi.ArgumentList.Add("--referer");
             psi.ArgumentList.Add(cleanUrl);
+        }
+
+        if (!string.IsNullOrWhiteSpace(customOrigin))
+        {
+            psi.ArgumentList.Add("--add-header");
+            psi.ArgumentList.Add($"Origin:{customOrigin}");
         }
 
         if (isAudioOnlyMp3)
@@ -918,9 +996,16 @@ public class VideoQualityAndDownloadService
         psi.ArgumentList.Add("--print");
         psi.ArgumentList.Add("after_move:filepath");
 
+        bool hasCleanCustomTitle = !string.IsNullOrWhiteSpace(customTitle) &&
+                                   !customTitle.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
+                                   !customTitle.Equals("Video MP4", StringComparison.OrdinalIgnoreCase) &&
+                                   !customTitle.Equals("Audio MP3", StringComparison.OrdinalIgnoreCase);
+
         var outputTemplate = isPlaylist
             ? Path.Combine(targetDirectory, "%(playlist_title)s", "%(playlist_index)02d - %(title)s.%(ext)s")
-            : Path.Combine(targetDirectory, "%(title)s.%(ext)s");
+            : (hasCleanCustomTitle && !isNativeYtDlpPlatform
+                ? Path.Combine(targetDirectory, $"{SanitizeFileName(customTitle!)}.%(ext)s")
+                : Path.Combine(targetDirectory, "%(title)s.%(ext)s"));
         psi.ArgumentList.Add("-o");
         psi.ArgumentList.Add(outputTemplate);
         psi.ArgumentList.Add(cleanUrl);
@@ -1032,6 +1117,218 @@ public class VideoQualityAndDownloadService
         }
 
         return downloadedPath ?? Path.Combine(targetDirectory, "descarga" + extExpected);
+    }
+
+    private async Task<string?> TryDownloadSniffedStreamAsync(
+        string streamUrl,
+        bool isAudioOnlyMp3,
+        QualityOption selectedQuality,
+        string targetDirectory,
+        string? ffmpegPath,
+        string? customTitle,
+        string? customReferer,
+        string? customOrigin,
+        string? customCookies,
+        bool isHls,
+        IProgress<(double Percent, string Status)> progress,
+        CancellationToken ct)
+    {
+        var ext = isAudioOnlyMp3 ? ".mp3" : ".mp4";
+        var baseName = SanitizeFileName(
+            !string.IsNullOrWhiteSpace(customTitle) && !customTitle.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? customTitle
+                : "video_chasclip");
+
+        var destPath = Path.Combine(targetDirectory, baseName + ext);
+        int suffix = 2;
+        while (File.Exists(destPath))
+        {
+            destPath = Path.Combine(targetDirectory, $"{baseName} ({suffix}){ext}");
+            suffix++;
+        }
+
+        var effectiveUrl = streamUrl;
+        if (isHls && selectedQuality.TargetHeight > 0)
+        {
+            try
+            {
+                var variants = await TryExpandHlsMasterPlaylistAsync(streamUrl, customReferer, customCookies, ct);
+                if (variants.Count > 0)
+                {
+                    var picked = SelectBestStreamForQuality(variants, selectedQuality.TargetHeight);
+                    if (picked != null && !string.IsNullOrWhiteSpace(picked.Url))
+                        effectiveUrl = picked.Url;
+                }
+            }
+            catch { }
+        }
+
+        var origin = !string.IsNullOrWhiteSpace(customOrigin)
+            ? customOrigin.TrimEnd('/')
+            : (Uri.TryCreate(effectiveUrl, UriKind.Absolute, out var u) ? $"{u.Scheme}://{u.Authority}" : "https://www.google.com");
+
+        // 1) Si no es HLS ni requiere conversión a MP3, probar descarga HTTP directa primero
+        if (!isHls && !isAudioOnlyMp3)
+        {
+            try
+            {
+                progress.Report((3, "Descargando archivo de video directo..."));
+                var byteProg = new Progress<double>(p =>
+                    progress.Report((p, $"Descargando video: {p:0.0}%")));
+
+                await HttpHelper.DownloadFileWithProgressAsync(
+                    effectiveUrl,
+                    destPath,
+                    string.IsNullOrWhiteSpace(customReferer) ? origin + "/" : customReferer,
+                    customCookies,
+                    byteProg,
+                    ct);
+
+                if (File.Exists(destPath) && new FileInfo(destPath).Length > 10_000)
+                {
+                    progress.Report((100, "✓ Descarga completada con éxito"));
+                    return destPath;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                TryDeletePartialFile(destPath);
+                throw;
+            }
+            catch
+            {
+                TryDeletePartialFile(destPath);
+            }
+        }
+
+        // 2) Motor FFmpeg de alta velocidad con soporte completo para HLS (.m3u8 / /m3u8/ / segmentos fMP4/TS con cualquier extensión)
+        if (!string.IsNullOrWhiteSpace(ffmpegPath) && File.Exists(ffmpegPath))
+        {
+            try
+            {
+                var headersSb = new StringBuilder();
+                headersSb.Append($"Origin: {origin}\r\n");
+                if (!string.IsNullOrWhiteSpace(customReferer))
+                    headersSb.Append($"Referer: {customReferer}\r\n");
+                if (!string.IsNullOrWhiteSpace(customCookies))
+                    headersSb.Append($"Cookie: {customCookies}\r\n");
+                headersSb.Append("Sec-Fetch-Site: same-origin\r\nSec-Fetch-Mode: cors\r\nSec-Fetch-Dest: empty\r\n");
+
+                var psi = new ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardError = true,
+                    RedirectStandardOutput = true,
+                    StandardErrorEncoding = Encoding.UTF8
+                };
+
+                psi.ArgumentList.Add("-y");
+                psi.ArgumentList.Add("-extension_picky");
+                psi.ArgumentList.Add("0");
+                psi.ArgumentList.Add("-allowed_extensions");
+                psi.ArgumentList.Add("ALL");
+                psi.ArgumentList.Add("-protocol_whitelist");
+                psi.ArgumentList.Add("file,http,https,tcp,tls,crypto");
+                psi.ArgumentList.Add("-user_agent");
+                psi.ArgumentList.Add(HttpHelper.BrowserUserAgent);
+                psi.ArgumentList.Add("-headers");
+                psi.ArgumentList.Add(headersSb.ToString());
+                psi.ArgumentList.Add("-i");
+                psi.ArgumentList.Add(effectiveUrl);
+
+                if (isAudioOnlyMp3)
+                {
+                    psi.ArgumentList.Add("-vn");
+                    psi.ArgumentList.Add("-c:a");
+                    psi.ArgumentList.Add("libmp3lame");
+                    psi.ArgumentList.Add("-q:a");
+                    psi.ArgumentList.Add("0");
+                }
+                else
+                {
+                    psi.ArgumentList.Add("-c");
+                    psi.ArgumentList.Add("copy");
+                }
+
+                psi.ArgumentList.Add(destPath);
+
+                progress.Report((4, isAudioOnlyMp3 ? "Extrayendo audio MP3 del flujo..." : "Descargando y ensamblando video MP4..."));
+
+                using var proc = Process.Start(psi);
+                if (proc != null)
+                {
+                    await using var reg = ct.Register(() => { try { proc.Kill(true); } catch { } });
+                    double totalSeconds = 0;
+                    double fallbackPct = 6;
+
+                    var stderrTask = Task.Run(async () =>
+                    {
+                        while (!proc.StandardError.EndOfStream && !ct.IsCancellationRequested)
+                        {
+                            var line = await proc.StandardError.ReadLineAsync(ct);
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+
+                            if (totalSeconds <= 0)
+                            {
+                                var dm = FfmpegDurationRegex.Match(line);
+                                if (dm.Success)
+                                    totalSeconds = ParseFfmpegTimestampSeconds(dm.Groups[1].Value, dm.Groups[2].Value, dm.Groups[3].Value);
+                            }
+
+                            var tm = FfmpegTimeRegex.Match(line);
+                            if (tm.Success)
+                            {
+                                double curSec = ParseFfmpegTimestampSeconds(tm.Groups[1].Value, tm.Groups[2].Value, tm.Groups[3].Value);
+                                double pct;
+                                if (totalSeconds > 0)
+                                {
+                                    pct = Math.Clamp((curSec / totalSeconds) * 100.0, 2.0, 99.0);
+                                }
+                                else
+                                {
+                                    fallbackPct = Math.Min(96.0, fallbackPct + 2.5);
+                                    pct = fallbackPct;
+                                }
+
+                                progress.Report((pct, isAudioOnlyMp3
+                                    ? $"Descargando audio MP3: {pct:0.0}%"
+                                    : $"Descargando video MP4: {pct:0.0}%"));
+                            }
+                        }
+                    }, ct);
+
+                    await proc.WaitForExitAsync(ct);
+                    try { await stderrTask; } catch { }
+
+                    if (proc.ExitCode == 0 && File.Exists(destPath) && new FileInfo(destPath).Length > 10_000)
+                    {
+                        progress.Report((100, "✓ Descarga completada con éxito"));
+                        return destPath;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                TryDeletePartialFile(destPath);
+                throw;
+            }
+            catch
+            {
+                TryDeletePartialFile(destPath);
+            }
+        }
+
+        return null;
+    }
+
+    private static double ParseFfmpegTimestampSeconds(string hh, string mm, string ss)
+    {
+        double.TryParse(hh, NumberStyles.Float, CultureInfo.InvariantCulture, out var h);
+        double.TryParse(mm, NumberStyles.Float, CultureInfo.InvariantCulture, out var m);
+        double.TryParse(ss, NumberStyles.Float, CultureInfo.InvariantCulture, out var s);
+        return (h * 3600.0) + (m * 60.0) + s;
     }
 
     private async Task<string> EnsureYtDlpExecutableAsync(

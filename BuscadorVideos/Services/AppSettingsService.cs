@@ -46,7 +46,11 @@ public class AppSettingsService
                     var json = File.ReadAllText(SettingsFilePath);
                     var loaded = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions);
                     if (loaded != null)
+                    {
+                        if (!string.Equals(loaded.Theme, "Light", StringComparison.OrdinalIgnoreCase))
+                            loaded.Theme = "Dark";
                         return loaded;
+                    }
                 }
                 catch
                 {

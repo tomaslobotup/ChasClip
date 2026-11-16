@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -17,7 +18,7 @@ using Microsoft.Web.WebView2.Core;
 namespace BuscadorVideos;
 
 /// <summary>
-/// Ventana principal de BUSCAPP — Buscador Multisitio Universal de Videos.
+/// Ventana principal de ChasClip — Buscador Multisitio Universal y Descargador de Videos.
 /// Coordina búsqueda simultánea, panel lateral colapsable, bloqueador de anuncios con advertencia,
 /// historial desplegable borrable, reversión de búsquedas y sitios borrados, y reproductor con regulador de calidad y descarga.
 /// </summary>
@@ -69,6 +70,29 @@ public partial class MainWindow : Window, IBrowserScraper
     private string? _lastDownloadedFilePath;
     private readonly ConcurrentQueue<(string Url, string? Referer)> _interceptedPlayerMediaUrls = new();
     private readonly SemaphoreSlim _scraperLock = new(1, 1);
+
+    private readonly BrowserShortcutsService _shortcutsService = new();
+    private DownloadQueueService _downloadQueueService = null!;
+    private List<BrowserShortcut> _browserShortcuts = [];
+    private string? _lastDetectedVideoUrl;
+    private string? _lastDetectedVideoTitle;
+    private readonly ObservableCollection<BrowserDetectedMediaItem> _browserDetectedMediaList = [];
+    private readonly object _browserDetectedMediaLock = new();
+    private BrowserDetectedMediaItem? _selectedBrowserMediaItem;
+    private string _lastBrowserPageUrl = string.Empty;
+    private bool _browserWebViewReady;
+    private readonly BrowserHistoryService _browserHistoryService = new();
+    private string _lastActiveArea = "";
+    private CancellationTokenSource? _toastCts;
+
+    private enum BrowserSubView
+    {
+        SpeedDial,
+        HistoryPage,
+        WebView
+    }
+
+    private BrowserSubView _currentBrowserSubView = BrowserSubView.SpeedDial;
 
     private AppSettings _appSettings;
     private List<VideoResult> _allSearchResults = [];
@@ -151,14 +175,23 @@ public partial class MainWindow : Window, IBrowserScraper
         DownloaderQualityComboBox.SelectedIndex = 0;
         DownloaderRecentItemsControl.ItemsSource = _recentDownloads;
 
-        if (Enum.TryParse<AppTheme>(_appSettings.Theme, out var currentTheme))
+        // Inicializar Cola de Descargas y Atajos del Buscador Web
+        _downloadQueueService = new DownloadQueueService(_qualityAndDownloadService);
+        _downloadQueueService.QueueChanged += OnDownloadQueueChanged;
+        DownloadQueueItemsControl.ItemsSource = _downloadQueueService.Items;
+        UpdateQueueBadge();
+
+        _browserShortcuts = _shortcutsService.LoadShortcuts();
+        BrowserShortcutsItemsControl.ItemsSource = _browserShortcuts;
+        BrowserHistoryItemsControl.ItemsSource = _browserHistoryService.Items;
+        PopulateSnaptubeQualityComboBox();
+
+        if (!string.Equals(_appSettings.Theme, "Light", StringComparison.OrdinalIgnoreCase))
         {
-            AppThemeService.ApplyTheme(currentTheme, _appSettings.CustomAccentColor);
+            _appSettings.Theme = "Dark";
         }
-        else
-        {
-            AppThemeService.ApplyTheme(AppTheme.Dark);
-        }
+        AppThemeService.ApplyTheme(_appSettings.Theme == "Light" ? AppTheme.Light : AppTheme.Dark);
+        UpdateGridDensityButtons();
         UpdateIncognitoBadgeVisual();
 
         ToggleNsfwPanelButton.Visibility = _appSettings.IsAdultContentEnabled ? Visibility.Visible : Visibility.Collapsed;
@@ -297,6 +330,19 @@ public partial class MainWindow : Window, IBrowserScraper
             await AttachAdBlockerAndSnifferAsync(PlayerWebView.CoreWebView2, sniffMediaStreams: true);
             PlayerWebView.CoreWebView2.NavigationCompleted += PlayerWebView_NavigationCompleted;
             _playerWebViewReady = true;
+
+            await BrowserWebView.EnsureCoreWebView2Async(_webViewEnv);
+            BrowserWebView.CoreWebView2.Settings.UserAgent = HttpHelper.BrowserUserAgent;
+            BrowserWebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
+            await AttachAdBlockerAndSnifferAsync(BrowserWebView.CoreWebView2, sniffMediaStreams: false);
+            AttachBrowserMediaSniffer(BrowserWebView.CoreWebView2);
+            await BrowserWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(BuildBrowserFloatingDownloadButtonScript());
+            BrowserWebView.CoreWebView2.WebMessageReceived += BrowserWebView_WebMessageReceived;
+            BrowserWebView.CoreWebView2.SourceChanged += BrowserWebView_SourceChanged;
+            BrowserWebView.CoreWebView2.HistoryChanged += BrowserWebView_HistoryChanged;
+            BrowserWebView.CoreWebView2.DocumentTitleChanged += BrowserWebView_DocumentTitleChanged;
+            BrowserWebView.CoreWebView2.NavigationCompleted += BrowserWebView_NavigationCompleted;
+            _browserWebViewReady = true;
         }
         catch
         {
@@ -1076,7 +1122,7 @@ public partial class MainWindow : Window, IBrowserScraper
                 Label = "Todas",
                 Count = _allSearchResults.Count,
                 IsSelected = _selectedFilterSiteId == null,
-                AccentHex = "#8B7CFF"
+                AccentHex = AppThemeService.PaletteNeutralHex
             }
         };
 
@@ -1262,20 +1308,12 @@ public partial class MainWindow : Window, IBrowserScraper
 
     private void UpdateGridDensityButtons()
     {
-        var activeBg = (Brush)new BrushConverter().ConvertFromString("#6D5DFB")!;
-        var activeFg = Brushes.White;
-        var activeBorder = (Brush)new BrushConverter().ConvertFromString("#9B8EFF")!;
-
-        var normalBg = (Brush)new BrushConverter().ConvertFromString("#1A2035")!;
-        var normalFg = (Brush)new BrushConverter().ConvertFromString("#9AA5C4")!;
-        var normalBorder = (Brush)new BrushConverter().ConvertFromString("#2D3754")!;
-
         void StyleButton(Button? btn, bool isActive)
         {
             if (btn == null) return;
-            btn.Background = isActive ? activeBg : normalBg;
-            btn.Foreground = isActive ? activeFg : normalFg;
-            btn.BorderBrush = isActive ? activeBorder : normalBorder;
+            btn.SetResourceReference(Control.BackgroundProperty, isActive ? "AppAccentBrush" : "AppButtonBackgroundBrush");
+            btn.SetResourceReference(Control.ForegroundProperty, isActive ? "AppAccentForegroundBrush" : "AppButtonForegroundBrush");
+            btn.SetResourceReference(Control.BorderBrushProperty, isActive ? "AppAccentBorderBrush" : "AppButtonBorderBrush");
             btn.FontWeight = isActive ? FontWeights.Bold : FontWeights.SemiBold;
         }
 
@@ -1288,35 +1326,115 @@ public partial class MainWindow : Window, IBrowserScraper
         StyleButton(BottomGridCols6Btn, SelectedGridColumns == 6);
     }
 
-    // ==================== NAVEGACIÓN ENTRE MENÚ INICIAL, BUSCADOR Y DESCARGADOR ====================
+    // ==================== NAVEGACIÓN ENTRE MENÚ INICIAL, BUSCADOR, DESCARGADOR Y BUSCADOR WEB ====================
 
     private void NavToHomeMenu_Click(object sender, RoutedEventArgs e) => ShowHomeMenu();
     private void NavToSearchArea_Click(object sender, RoutedEventArgs e) => ShowSearchArea();
     private void NavToDownloaderArea_Click(object sender, RoutedEventArgs e) => ShowDownloaderArea();
+    private void NavToBrowserArea_Click(object sender, RoutedEventArgs e) => ShowBrowserArea();
     private void HomeMenu_OpenSearch_Click(object sender, RoutedEventArgs e) => ShowSearchArea();
     private void HomeMenu_OpenDownloader_Click(object sender, RoutedEventArgs e) => ShowDownloaderArea();
+    private void HomeMenu_OpenBrowser_Click(object sender, RoutedEventArgs e) => ShowBrowserArea();
 
-    private void ShowHomeMenu()
+    private async void ShowHomeMenu()
     {
+        // 1. Detener reproducción del reproductor modal de búsqueda universal
+        if (PlayerModalOverlay.Visibility == Visibility.Visible || _activePlayerVideo != null)
+        {
+            CloseIntegratedPlayer();
+        }
+
+        // 2. Si el buscador web estaba reproduciendo audio/video, pausar elementos multimedia
+        if (_browserWebViewReady && BrowserWebView?.CoreWebView2 != null)
+        {
+            try
+            {
+                await BrowserWebView.CoreWebView2.ExecuteScriptAsync(
+                    "document.querySelectorAll('video, audio').forEach(el => { try { el.pause(); } catch(e){} });"
+                );
+            }
+            catch { }
+        }
+
+        // 3. Configurar botón para reanudar sesión si la había
+        UpdateHomeResumeSessionBar();
+
         HomeMenuGrid.Visibility = Visibility.Visible;
         SearchAreaGrid.Visibility = Visibility.Collapsed;
         DownloaderAreaGrid.Visibility = Visibility.Collapsed;
+        BrowserAreaGrid.Visibility = Visibility.Collapsed;
+    }
+
+    private void UpdateHomeResumeSessionBar()
+    {
+        if (_lastActiveArea == "Browser" && BrowserWebView.Source != null && !BrowserWebView.Source.ToString().StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+        {
+            HomeResumeSessionTitleText.Text = "BUSCADOR WEB ACTIVO";
+            HomeResumeSessionDescText.Text = string.IsNullOrWhiteSpace(BrowserUrlTextBox.Text)
+                ? "Tienes una página abierta en el Buscador Web"
+                : $"Página abierta: {BrowserUrlTextBox.Text}";
+            HomeResumeSessionBtn.Content = "↩ Volver al Buscador Web";
+            HomeResumeSessionBorder.Visibility = Visibility.Visible;
+        }
+        else if (_lastActiveArea == "Search" && _allSearchResults.Count > 0)
+        {
+            HomeResumeSessionTitleText.Text = "BÚSQUEDA ACTIVA (BETA)";
+            HomeResumeSessionDescText.Text = string.IsNullOrWhiteSpace(SearchQueryTextBox.Text)
+                ? "Tienes resultados de búsqueda disponibles"
+                : $"Búsqueda: \"{SearchQueryTextBox.Text}\" ({_allSearchResults.Count} videos)";
+            HomeResumeSessionBtn.Content = "↩ Volver a la Búsqueda";
+            HomeResumeSessionBorder.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            HomeResumeSessionBorder.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void HomeResumeSessionBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_lastActiveArea == "Browser")
+            ShowBrowserArea();
+        else if (_lastActiveArea == "Search")
+            ShowSearchArea();
+        else
+            ShowDownloaderArea();
+    }
+
+    private void HomeDismissResumeSession_Click(object sender, RoutedEventArgs e)
+    {
+        HomeResumeSessionBorder.Visibility = Visibility.Collapsed;
+        _lastActiveArea = "";
     }
 
     private void ShowSearchArea()
     {
+        _lastActiveArea = "Search";
         HomeMenuGrid.Visibility = Visibility.Collapsed;
         SearchAreaGrid.Visibility = Visibility.Visible;
         DownloaderAreaGrid.Visibility = Visibility.Collapsed;
+        BrowserAreaGrid.Visibility = Visibility.Collapsed;
         SearchQueryTextBox.Focus();
     }
 
     private void ShowDownloaderArea()
     {
+        _lastActiveArea = "Downloader";
         HomeMenuGrid.Visibility = Visibility.Collapsed;
         SearchAreaGrid.Visibility = Visibility.Collapsed;
         DownloaderAreaGrid.Visibility = Visibility.Visible;
+        BrowserAreaGrid.Visibility = Visibility.Collapsed;
         DownloaderUrlTextBox.Focus();
+    }
+
+    private void ShowBrowserArea()
+    {
+        _lastActiveArea = "Browser";
+        HomeMenuGrid.Visibility = Visibility.Collapsed;
+        SearchAreaGrid.Visibility = Visibility.Collapsed;
+        DownloaderAreaGrid.Visibility = Visibility.Collapsed;
+        BrowserAreaGrid.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
     }
 
     // ==================== APARTADO DEDICADO DE DESCARGAS (VIDEO MP4 & AUDIO MP3) ====================
@@ -1341,42 +1459,35 @@ public partial class MainWindow : Window, IBrowserScraper
         }
 
         string detected = "";
-        string colorHex = "#A78BFA";
         if (text.Contains("youtube.com", StringComparison.OrdinalIgnoreCase) || text.Contains("youtu.be", StringComparison.OrdinalIgnoreCase))
         {
             detected = "YouTube (Videos & Shorts)";
-            colorHex = "#F87171";
         }
         else if (text.Contains("twitch.tv", StringComparison.OrdinalIgnoreCase))
         {
             detected = "Twitch (Clips & VODs)";
-            colorHex = "#C084FC";
         }
         else if (text.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase))
         {
             detected = "TikTok (Videos y clips)";
-            colorHex = "#2DD4BF";
         }
         else if (text.Contains("instagram.com", StringComparison.OrdinalIgnoreCase))
         {
             detected = "Instagram (Reels & Publicaciones)";
-            colorHex = "#F472B6";
         }
         else if (text.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase))
         {
             detected = "Dailymotion (Full HD)";
-            colorHex = "#60A5FA";
         }
         else if (text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
             detected = "Enlace Web Directo";
-            colorHex = "#34D399";
         }
 
         if (!string.IsNullOrEmpty(detected))
         {
             DownloaderDetectedPlatformText.Text = detected;
-            DownloaderDetectedPlatformText.Foreground = (Brush)new BrushConverter().ConvertFromString(colorHex)!;
+            DownloaderDetectedPlatformText.SetResourceReference(TextBlock.ForegroundProperty, "AppTextPrimaryBrush");
             DownloaderDetectedPlatformBorder.Visibility = Visibility.Visible;
         }
         else
@@ -1455,6 +1566,32 @@ public partial class MainWindow : Window, IBrowserScraper
     private void DownloaderStartButton_Click(object sender, RoutedEventArgs e)
     {
         StartDedicatedDownload();
+    }
+
+    private void DownloaderEnqueueButton_Click(object sender, RoutedEventArgs e)
+    {
+        var rawUrl = (DownloaderUrlTextBox.Text ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(rawUrl) || (!rawUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !rawUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            ShowDownloaderError("Por favor, ingresa o pega un enlace válido que comience con http:// o https://");
+            return;
+        }
+
+        DownloaderErrorBorder.Visibility = Visibility.Collapsed;
+
+        bool isAudioOnly = DownloaderFormatAudioRadio.IsChecked == true;
+        var selectedQuality = DownloaderQualityComboBox.SelectedItem as QualityOption ?? QualityOption.DefaultOptions[0];
+
+        _downloadQueueService.Enqueue(
+            rawUrl,
+            rawUrl,
+            isAudioOnly,
+            isAudioOnly ? "MP3 Audio" : selectedQuality.Label,
+            selectedQuality.TargetHeight,
+            _currentDownloadDirectory);
+
+        DownloadQueueDrawerOverlay.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
     }
 
     private async void StartDedicatedDownload()
@@ -2401,6 +2538,30 @@ public partial class MainWindow : Window, IBrowserScraper
                 CloseIncompatibleSearchOverlay_Click(this, new RoutedEventArgs());
                 e.Handled = true;
             }
+            else if (SnaptubeDownloadModalOverlay.Visibility == Visibility.Visible)
+            {
+                SnaptubeDownloadModalOverlay.Visibility = Visibility.Collapsed;
+                RefreshWebViewAirspace();
+                e.Handled = true;
+            }
+            else if (AddShortcutModalOverlay.Visibility == Visibility.Visible)
+            {
+                AddShortcutModalOverlay.Visibility = Visibility.Collapsed;
+                RefreshWebViewAirspace();
+                e.Handled = true;
+            }
+            else if (DownloadQueueDrawerOverlay.Visibility == Visibility.Visible)
+            {
+                DownloadQueueDrawerOverlay.Visibility = Visibility.Collapsed;
+                RefreshWebViewAirspace();
+                e.Handled = true;
+            }
+            else if (SettingsModalOverlay.Visibility == Visibility.Visible)
+            {
+                SettingsModalOverlay.Visibility = Visibility.Collapsed;
+                RefreshWebViewAirspace();
+                e.Handled = true;
+            }
         }
     }
 
@@ -2877,10 +3038,9 @@ public partial class MainWindow : Window, IBrowserScraper
 
     private void OpenSettingsModalButton_Click(object sender, RoutedEventArgs e)
     {
-        ThemeDarkRadio.IsChecked = _appSettings.Theme == "Dark";
-        ThemeLightRadio.IsChecked = _appSettings.Theme == "Light";
-        ThemeCustomRadio.IsChecked = _appSettings.Theme == "Custom";
-        CustomColorPalettePanel.Visibility = _appSettings.Theme == "Custom" ? Visibility.Visible : Visibility.Collapsed;
+        bool isLight = string.Equals(_appSettings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        ThemeDarkRadio.IsChecked = !isLight;
+        ThemeLightRadio.IsChecked = isLight;
         SettingsIncognitoCheckBox.IsChecked = _appSettings.IsIncognitoMode;
         SettingsAdultCheckBox.IsChecked = _appSettings.IsAdultContentEnabled;
         LangSpanishRadio.IsChecked = _appSettings.Language != "en";
@@ -2891,6 +3051,7 @@ public partial class MainWindow : Window, IBrowserScraper
         SettingsPlaylistAutoCheckBox.IsChecked = _appSettings.DownloadPlaylistsComplete;
 
         SettingsModalOverlay.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
     }
 
     private void CloseSettingsModal_Click(object sender, RoutedEventArgs e)
@@ -2898,6 +3059,7 @@ public partial class MainWindow : Window, IBrowserScraper
         _appSettings.DownloadPlaylistsComplete = SettingsPlaylistAutoCheckBox.IsChecked == true;
         _settingsService.SaveSettings(_appSettings);
         SettingsModalOverlay.Visibility = Visibility.Collapsed;
+        RefreshWebViewAirspace();
     }
 
     private void ThemeRadio_Checked(object sender, RoutedEventArgs e)
@@ -2907,35 +3069,16 @@ public partial class MainWindow : Window, IBrowserScraper
         if (ThemeLightRadio?.IsChecked == true)
         {
             _appSettings.Theme = "Light";
-            if (CustomColorPalettePanel != null) CustomColorPalettePanel.Visibility = Visibility.Collapsed;
             AppThemeService.ApplyTheme(AppTheme.Light);
-        }
-        else if (ThemeCustomRadio?.IsChecked == true)
-        {
-            _appSettings.Theme = "Custom";
-            if (CustomColorPalettePanel != null) CustomColorPalettePanel.Visibility = Visibility.Visible;
-            AppThemeService.ApplyTheme(AppTheme.Custom, _appSettings.CustomAccentColor);
         }
         else
         {
             _appSettings.Theme = "Dark";
-            if (CustomColorPalettePanel != null) CustomColorPalettePanel.Visibility = Visibility.Collapsed;
             AppThemeService.ApplyTheme(AppTheme.Dark);
         }
 
+        UpdateGridDensityButtons();
         _settingsService.SaveSettings(_appSettings);
-    }
-
-    private void AccentPresetButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is Button b && b.Tag is string hex)
-        {
-            _appSettings.CustomAccentColor = hex;
-            _appSettings.Theme = "Custom";
-            if (ThemeCustomRadio != null) ThemeCustomRadio.IsChecked = true;
-            AppThemeService.ApplyTheme(AppTheme.Custom, hex);
-            _settingsService.SaveSettings(_appSettings);
-        }
     }
 
     private void SettingsIncognitoCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -2959,9 +3102,15 @@ public partial class MainWindow : Window, IBrowserScraper
 
     private void UpdateIncognitoBadgeVisual()
     {
-        if (IncognitoIndicatorBadge != null && _appSettings != null)
+        if (_appSettings == null) return;
+        var vis = _appSettings.IsIncognitoMode ? Visibility.Visible : Visibility.Collapsed;
+        if (IncognitoIndicatorBadge != null)
         {
-            IncognitoIndicatorBadge.Visibility = _appSettings.IsIncognitoMode ? Visibility.Visible : Visibility.Collapsed;
+            IncognitoIndicatorBadge.Visibility = vis;
+        }
+        if (BrowserIncognitoBadge != null)
+        {
+            BrowserIncognitoBadge.Visibility = vis;
         }
     }
 
@@ -3043,6 +3192,1359 @@ public partial class MainWindow : Window, IBrowserScraper
         if (SettingsIncognitoSubLabel != null) SettingsIncognitoSubLabel.Text = LocalizationService.T("SettingsIncognitoSub");
         if (SettingsAdultLabel != null) SettingsAdultLabel.Text = LocalizationService.T("SettingsAdult");
         if (SettingsAdultSubLabel != null) SettingsAdultSubLabel.Text = LocalizationService.T("SettingsAdultSub");
+    }
+
+    // ==================== MÓDULO BUSCADOR WEB CON ATAJOS, HISTORIAL EN PÁGINA APARTE Y BOTÓN FLOTANTE ====================
+
+    private void PopulateSnaptubeQualityComboBox()
+    {
+        SnaptubeModalQualityComboBox.ItemsSource = QualityOption.DefaultOptions;
+        SnaptubeModalQualityComboBox.SelectedIndex = 0;
+    }
+
+    private void SetBrowserSubView(BrowserSubView subView)
+    {
+        _currentBrowserSubView = subView;
+        RefreshWebViewAirspace();
+    }
+
+    /// <summary>
+    /// Gestiona la visibilidad de BrowserWebView (HwndHost) para garantizar que:
+    /// 1) Las páginas internas de Atajos e Historial se muestren como apartados propios sin superposición de WebView2.
+    /// 2) Cualquier modal o cajón lateral (Descargar Video, Guardar Atajo, Cola de Descargas, Ajustes) se superponga al 100% sin quedar tapado por el HwndHost de WebView2.
+    /// </summary>
+    private void RefreshWebViewAirspace()
+    {
+        if (BrowserSpeedDialScrollViewer == null || BrowserHistoryPageScrollViewer == null || BrowserWebView == null)
+            return;
+
+        bool anyOverlayOpen =
+            SnaptubeDownloadModalOverlay?.Visibility == Visibility.Visible ||
+            AddShortcutModalOverlay?.Visibility == Visibility.Visible ||
+            DownloadQueueDrawerOverlay?.Visibility == Visibility.Visible ||
+            SettingsModalOverlay?.Visibility == Visibility.Visible;
+
+        bool hasLoadedWebPage = BrowserWebView.Source != null &&
+                                !BrowserWebView.Source.ToString().StartsWith("about:", StringComparison.OrdinalIgnoreCase);
+
+        if (SpeedDialReturnToWebBtn != null)
+            SpeedDialReturnToWebBtn.Visibility = hasLoadedWebPage ? Visibility.Visible : Visibility.Collapsed;
+
+        if (BrowserHistoryReturnToWebBtn != null)
+            BrowserHistoryReturnToWebBtn.Visibility = hasLoadedWebPage ? Visibility.Visible : Visibility.Collapsed;
+
+        if (_currentBrowserSubView == BrowserSubView.SpeedDial)
+        {
+            BrowserSpeedDialScrollViewer.Visibility = Visibility.Visible;
+            BrowserHistoryPageScrollViewer.Visibility = Visibility.Collapsed;
+            BrowserWebView.Visibility = Visibility.Collapsed;
+            if (BrowserAirspacePlaceholderBorder != null)
+                BrowserAirspacePlaceholderBorder.Visibility = Visibility.Collapsed;
+            if (BrowserVideoDetectionBar != null)
+                BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+        }
+        else if (_currentBrowserSubView == BrowserSubView.HistoryPage)
+        {
+            BrowserSpeedDialScrollViewer.Visibility = Visibility.Collapsed;
+            BrowserHistoryPageScrollViewer.Visibility = Visibility.Visible;
+            BrowserWebView.Visibility = Visibility.Collapsed;
+            if (BrowserAirspacePlaceholderBorder != null)
+                BrowserAirspacePlaceholderBorder.Visibility = Visibility.Collapsed;
+            if (BrowserVideoDetectionBar != null)
+                BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+            if (BrowserHistoryEmptyState != null)
+                BrowserHistoryEmptyState.Visibility = _browserHistoryService.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        else // BrowserSubView.WebView
+        {
+            BrowserSpeedDialScrollViewer.Visibility = Visibility.Collapsed;
+            BrowserHistoryPageScrollViewer.Visibility = Visibility.Collapsed;
+
+            if (anyOverlayOpen)
+            {
+                BrowserWebView.Visibility = Visibility.Collapsed;
+                if (BrowserAirspacePlaceholderBorder != null)
+                    BrowserAirspacePlaceholderBorder.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                if (BrowserAirspacePlaceholderBorder != null)
+                    BrowserAirspacePlaceholderBorder.Visibility = Visibility.Collapsed;
+                BrowserWebView.Visibility = Visibility.Visible;
+            }
+        }
+    }
+
+    private async void PauseBrowserWebViewMediaAsync()
+    {
+        if (_browserWebViewReady && BrowserWebView?.CoreWebView2 != null)
+        {
+            try
+            {
+                await BrowserWebView.CoreWebView2.ExecuteScriptAsync(
+                    "document.querySelectorAll('video, audio').forEach(el => { try { el.pause(); } catch(e){} });"
+                );
+            }
+            catch { }
+        }
+    }
+
+    private void BrowserShowSpeedDial_Click(object sender, RoutedEventArgs e)
+    {
+        PauseBrowserWebViewMediaAsync();
+        SetBrowserSubView(BrowserSubView.SpeedDial);
+    }
+
+    private void BrowserShowHistory_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentBrowserSubView == BrowserSubView.HistoryPage &&
+            BrowserWebView.Source != null &&
+            !BrowserWebView.Source.ToString().StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+        {
+            SetBrowserSubView(BrowserSubView.WebView);
+            return;
+        }
+
+        PauseBrowserWebViewMediaAsync();
+        SetBrowserSubView(BrowserSubView.HistoryPage);
+    }
+
+    private void BrowserReturnToActiveWeb_Click(object sender, RoutedEventArgs e)
+    {
+        if (BrowserWebView.Source != null &&
+            !BrowserWebView.Source.ToString().StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+        {
+            BrowserUrlTextBox.Text = BrowserWebView.Source.ToString();
+            SetBrowserSubView(BrowserSubView.WebView);
+            CheckAndDetectVideoInCurrentPage();
+        }
+    }
+
+    private void BrowserBackBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentBrowserSubView != BrowserSubView.WebView &&
+            BrowserWebView.Source != null &&
+            !BrowserWebView.Source.ToString().StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+        {
+            SetBrowserSubView(BrowserSubView.WebView);
+            return;
+        }
+
+        if (BrowserWebView.CanGoBack)
+            BrowserWebView.GoBack();
+        else
+            BrowserShowSpeedDial_Click(sender, e);
+    }
+
+    private void BrowserForwardBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (BrowserWebView.CanGoForward)
+        {
+            SetBrowserSubView(BrowserSubView.WebView);
+            BrowserWebView.GoForward();
+        }
+    }
+
+    private void BrowserReloadBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentBrowserSubView == BrowserSubView.WebView)
+            BrowserWebView.Reload();
+    }
+
+    private void BrowserNavigateBtn_Click(object sender, RoutedEventArgs e)
+        => NavigateBrowserToUrl(BrowserUrlTextBox.Text);
+
+    private void BrowserUrlTextBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            NavigateBrowserToUrl(BrowserUrlTextBox.Text);
+            e.Handled = true;
+        }
+    }
+
+    private void NavigateBrowserToUrl(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            BrowserShowSpeedDial_Click(this, new RoutedEventArgs());
+            return;
+        }
+
+        var query = input.Trim();
+        string targetUrl;
+        bool isDirectUrl = false;
+
+        if (query.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            query.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            targetUrl = query;
+            isDirectUrl = true;
+        }
+        else if (query.Contains('.') && !query.Contains(' ') && query.Length >= 4)
+        {
+            targetUrl = "https://" + query;
+            isDirectUrl = true;
+        }
+        else
+        {
+            targetUrl = $"https://duckduckgo.com/?q={Uri.EscapeDataString(query)}";
+        }
+
+        if (!isDirectUrl && !_appSettings.IsIncognitoMode)
+        {
+            _browserHistoryService.AddEntry($"Búsqueda: {query}", targetUrl);
+        }
+
+        SetBrowserSubView(BrowserSubView.WebView);
+
+        if (_browserWebViewReady && BrowserWebView.CoreWebView2 != null)
+        {
+            BrowserWebView.CoreWebView2.Navigate(targetUrl);
+        }
+        else
+        {
+            BrowserWebView.Source = new Uri(targetUrl);
+        }
+    }
+
+    private void ShortcutCard_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: BrowserShortcut shortcut })
+        {
+            BrowserUrlTextBox.Text = shortcut.Url;
+            NavigateBrowserToUrl(shortcut.Url);
+        }
+    }
+
+    private void DeleteShortcut_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: BrowserShortcut shortcut })
+        {
+            _browserShortcuts.Remove(shortcut);
+            _shortcutsService.SaveShortcuts(_browserShortcuts);
+            BrowserShortcutsItemsControl.ItemsSource = null;
+            BrowserShortcutsItemsControl.ItemsSource = _browserShortcuts;
+            e.Handled = true;
+        }
+    }
+
+    private void OpenAddShortcutModal_Click(object sender, RoutedEventArgs e)
+    {
+        NewShortcutTitleTextBox.Text = string.Empty;
+        NewShortcutUrlTextBox.Text = "https://";
+        AddShortcutModalOverlay.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
+        NewShortcutTitleTextBox.Focus();
+    }
+
+    private void CloseAddShortcutModal_Click(object sender, RoutedEventArgs e)
+    {
+        AddShortcutModalOverlay.Visibility = Visibility.Collapsed;
+        RefreshWebViewAirspace();
+    }
+
+    private void SaveNewShortcut_Click(object sender, RoutedEventArgs e)
+    {
+        var title = NewShortcutTitleTextBox.Text?.Trim();
+        var url = NewShortcutUrlTextBox.Text?.Trim();
+
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(url))
+            return;
+
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            url = "https://" + url;
+        }
+
+        var shortcut = new BrowserShortcut
+        {
+            Title = title,
+            Url = url,
+            IconEmoji = "🌐",
+            IsCustom = true
+        };
+
+        _browserShortcuts.Add(shortcut);
+        _shortcutsService.SaveShortcuts(_browserShortcuts);
+        BrowserShortcutsItemsControl.ItemsSource = null;
+        BrowserShortcutsItemsControl.ItemsSource = _browserShortcuts;
+
+        AddShortcutModalOverlay.Visibility = Visibility.Collapsed;
+        RefreshWebViewAirspace();
+    }
+
+    private void BrowserAddCurrentPageToShortcuts_Click(object sender, RoutedEventArgs e)
+    {
+        var url = BrowserWebView.Source?.ToString() ?? BrowserUrlTextBox.Text;
+        var title = BrowserWebView.CoreWebView2?.DocumentTitle ?? "Mi Atajo";
+
+        NewShortcutTitleTextBox.Text = title;
+        NewShortcutUrlTextBox.Text = url;
+        AddShortcutModalOverlay.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
+        NewShortcutTitleTextBox.Focus();
+    }
+
+    // ==================== BOTÓN FLOTANTE INYECTADO EN DOM CON AURA BRILLANTE Y DETECCIÓN DE VIDEOS ====================
+
+    /// <summary>
+    /// Construye el script que inyecta el botón flotante de descarga directamente dentro de la página de BrowserWebView.
+    /// Usa exclusivamente document.createElement, .textContent y .style.setProperty (sin .innerHTML) para ser 100% compatible
+    /// con políticas TrustedTypes (como YouTube) y CSP estrictos.
+    /// </summary>
+    private static string BuildBrowserFloatingDownloadButtonScript()
+    {
+        return @"
+(function() {
+    if (window !== window.top) return;
+    if (window.__chasclipFabInitialized) return;
+    window.__chasclipFabInitialized = true;
+
+    let fabBtn = null;
+    let statusLabel = null;
+    let mainLabel = null;
+    let iconCircle = null;
+    let pulseToggle = false;
+    let lastReportedUrl = '';
+    let lastReportedTitle = '';
+
+    function detectVideoState() {
+        const loc = window.location.href || '';
+        const cleanTitle = (document.title || 'Video Web').replace(/^\(\d+\)\s*/, '').replace(/\s*-\s*YouTube$/i, '').trim();
+
+        if (loc.includes('youtube.com/watch') || loc.includes('youtu.be/') || loc.includes('youtube.com/shorts/') ||
+            /tiktok\.com\/@[^/]+\/video\//i.test(loc) ||
+            /instagram\.com\/(p|reel|tv)\//i.test(loc) ||
+            /twitch\.tv\/videos\//i.test(loc) ||
+            /dailymotion\.com\/video\//i.test(loc) ||
+            /vimeo\.com\/\d+/i.test(loc) ||
+            (/x\.com\/[^/]+\/status\//i.test(loc)) ||
+            (/twitter\.com\/[^/]+\/status\//i.test(loc)) ||
+            (/facebook\.com\/.*\/(videos|watch|reel)/i.test(loc))) {
+            return { isVideo: true, url: loc, title: cleanTitle };
+        }
+
+        const videos = document.querySelectorAll('video');
+        for (let i = 0; i < videos.length; i++) {
+            const v = videos[i];
+            const src = v.currentSrc || v.src || '';
+            const rect = v.getBoundingClientRect();
+            if (rect.width > 120 && rect.height > 80 && (src || v.readyState > 0 || !v.paused)) {
+                const directUrl = (src && !src.startsWith('blob:')) ? src : loc;
+                return { isVideo: true, url: directUrl, title: cleanTitle };
+            }
+        }
+
+        return { isVideo: false, url: loc, title: cleanTitle };
+    }
+
+    function ensureFloatingButton() {
+        const root = document.documentElement || document.body;
+        if (!root) return;
+
+        let existing = document.getElementById('__chasclip_floating_dl_btn__');
+        if (!existing) {
+            fabBtn = document.createElement('div');
+            fabBtn.id = '__chasclip_floating_dl_btn__';
+            fabBtn.setAttribute('title', 'Descargar este video a la cola de descargas');
+
+            fabBtn.style.setProperty('position', 'fixed', 'important');
+            fabBtn.style.setProperty('right', '28px', 'important');
+            fabBtn.style.setProperty('bottom', '28px', 'important');
+            fabBtn.style.setProperty('z-index', '2147483647', 'important');
+            fabBtn.style.setProperty('display', 'flex', 'important');
+            fabBtn.style.setProperty('align-items', 'center', 'important');
+            fabBtn.style.setProperty('gap', '11px', 'important');
+            fabBtn.style.setProperty('padding', '11px 22px 11px 14px', 'important');
+            fabBtn.style.setProperty('border-radius', '999px', 'important');
+            fabBtn.style.setProperty('background', 'linear-gradient(135deg, #390007 0%, #68000E 100%)', 'important');
+            fabBtn.style.setProperty('border', '2px solid #F0F4F5', 'important');
+            fabBtn.style.setProperty('color', '#F0F4F5', 'important');
+            fabBtn.style.setProperty('font-family', 'Segoe UI, system-ui, -apple-system, sans-serif', 'important');
+            fabBtn.style.setProperty('cursor', 'pointer', 'important');
+            fabBtn.style.setProperty('user-select', 'none', 'important');
+            fabBtn.style.setProperty('transition', 'box-shadow 0.7s ease-in-out, transform 0.18s ease, opacity 0.25s ease', 'important');
+            fabBtn.style.setProperty('box-shadow', '0 0 22px 6px rgba(220, 10, 45, 0.9), 0 0 44px 12px rgba(57, 0, 7, 0.95), 0 6px 20px rgba(0,0,0,0.85)', 'important');
+
+            iconCircle = document.createElement('div');
+            iconCircle.textContent = '⬇';
+            iconCircle.style.setProperty('width', '34px', 'important');
+            iconCircle.style.setProperty('height', '34px', 'important');
+            iconCircle.style.setProperty('border-radius', '50%', 'important');
+            iconCircle.style.setProperty('background', '#F0F4F5', 'important');
+            iconCircle.style.setProperty('color', '#390007', 'important');
+            iconCircle.style.setProperty('display', 'flex', 'important');
+            iconCircle.style.setProperty('align-items', 'center', 'important');
+            iconCircle.style.setProperty('justify-content', 'center', 'important');
+            iconCircle.style.setProperty('font-size', '18px', 'important');
+            iconCircle.style.setProperty('font-weight', '900', 'important');
+            iconCircle.style.setProperty('flex-shrink', '0', 'important');
+
+            const textCol = document.createElement('div');
+            textCol.style.setProperty('display', 'flex', 'important');
+            textCol.style.setProperty('flex-direction', 'column', 'important');
+            textCol.style.setProperty('line-height', '1.2', 'important');
+
+            statusLabel = document.createElement('span');
+            statusLabel.textContent = '● VIDEO DETECTADO';
+            statusLabel.style.setProperty('font-size', '10px', 'important');
+            statusLabel.style.setProperty('font-weight', '800', 'important');
+            statusLabel.style.setProperty('letter-spacing', '0.5px', 'important');
+            statusLabel.style.setProperty('color', '#FFB8C2', 'important');
+
+            mainLabel = document.createElement('span');
+            mainLabel.textContent = 'DESCARGAR VIDEO';
+            mainLabel.style.setProperty('font-size', '13.5px', 'important');
+            mainLabel.style.setProperty('font-weight', '800', 'important');
+            mainLabel.style.setProperty('letter-spacing', '0.3px', 'important');
+            mainLabel.style.setProperty('color', '#F0F4F5', 'important');
+
+            textCol.appendChild(statusLabel);
+            textCol.appendChild(mainLabel);
+            fabBtn.appendChild(iconCircle);
+            fabBtn.appendChild(textCol);
+
+            fabBtn.addEventListener('mouseenter', function() {
+                fabBtn.style.setProperty('transform', 'scale(1.06)', 'important');
+            });
+            fabBtn.addEventListener('mouseleave', function() {
+                fabBtn.style.setProperty('transform', 'scale(1.0)', 'important');
+            });
+
+            fabBtn.addEventListener('click', function(ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                const st = detectVideoState();
+                try {
+                    if (window.chrome && window.chrome.webview) {
+                        window.chrome.webview.postMessage(JSON.stringify({
+                            type: 'CHASCLIP_FAB_DOWNLOAD',
+                            isVideo: st.isVideo,
+                            url: st.url,
+                            pageUrl: window.location.href,
+                            title: st.title
+                        }));
+                    }
+                } catch(e) {}
+            }, true);
+
+            root.appendChild(fabBtn);
+        }
+
+        const st = detectVideoState();
+        if (fabBtn && statusLabel && mainLabel) {
+            pulseToggle = !pulseToggle;
+            if (st.isVideo) {
+                statusLabel.textContent = '● VIDEO LISTO PARA DESCARGAR';
+                statusLabel.style.setProperty('color', '#FFCCD3', 'important');
+                mainLabel.textContent = '⬇ DESCARGAR A LA COLA';
+                fabBtn.style.setProperty('border', '2px solid #F0F4F5', 'important');
+                fabBtn.style.setProperty('opacity', '1', 'important');
+                if (pulseToggle) {
+                    fabBtn.style.setProperty('box-shadow', '0 0 32px 10px rgba(255, 30, 65, 1.0), 0 0 64px 20px rgba(163, 0, 24, 0.95), 0 6px 24px rgba(0,0,0,0.9)', 'important');
+                } else {
+                    fabBtn.style.setProperty('box-shadow', '0 0 18px 5px rgba(210, 0, 35, 0.85), 0 0 36px 10px rgba(57, 0, 7, 0.9), 0 6px 18px rgba(0,0,0,0.85)', 'important');
+                }
+            } else {
+                statusLabel.textContent = 'BUSCADOR MULTIMEDIA';
+                statusLabel.style.setProperty('color', '#9BA0AB', 'important');
+                mainLabel.textContent = 'DESCARGAR VIDEO';
+                fabBtn.style.setProperty('border', '2px solid #9BA0AB', 'important');
+                fabBtn.style.setProperty('opacity', '0.92', 'important');
+                if (pulseToggle) {
+                    fabBtn.style.setProperty('box-shadow', '0 0 22px 6px rgba(163, 0, 24, 0.85), 0 4px 16px rgba(0,0,0,0.85)', 'important');
+                } else {
+                    fabBtn.style.setProperty('box-shadow', '0 0 12px 3px rgba(120, 0, 18, 0.65), 0 4px 14px rgba(0,0,0,0.8)', 'important');
+                }
+            }
+        }
+
+        if (window.location.href !== lastReportedUrl || document.title !== lastReportedTitle) {
+            lastReportedUrl = window.location.href;
+            lastReportedTitle = document.title;
+            try {
+                if (window.chrome && window.chrome.webview) {
+                    window.chrome.webview.postMessage(JSON.stringify({
+                        type: 'CHASCLIP_PAGE_STATE',
+                        isVideo: st.isVideo,
+                        url: st.url,
+                        pageUrl: window.location.href,
+                        title: st.title
+                    }));
+                }
+            } catch(e) {}
+        }
+    }
+
+    setInterval(ensureFloatingButton, 700);
+    window.addEventListener('DOMContentLoaded', ensureFloatingButton);
+    window.addEventListener('load', ensureFloatingButton);
+    window.addEventListener('popstate', ensureFloatingButton);
+    document.addEventListener('yt-navigate-finish', ensureFloatingButton);
+    ensureFloatingButton();
+})();";
+    }
+
+    private void BrowserWebView_WebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            var raw = e.TryGetWebMessageAsString();
+            if (string.IsNullOrWhiteSpace(raw)) return;
+
+            using var doc = JsonDocument.Parse(raw);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("type", out var typeProp)) return;
+
+            var msgType = typeProp.GetString();
+            bool isVideo = root.TryGetProperty("isVideo", out var iv) && iv.GetBoolean();
+            var vidUrl = root.TryGetProperty("url", out var u) ? u.GetString() : null;
+            var pageUrl = root.TryGetProperty("pageUrl", out var pu) ? pu.GetString() : vidUrl;
+            var title = root.TryGetProperty("title", out var t) ? t.GetString() : "Video Web";
+
+            Dispatcher.Invoke(() =>
+            {
+                if (!string.IsNullOrWhiteSpace(pageUrl) && !pageUrl.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+                {
+                    BrowserUrlTextBox.Text = pageUrl;
+                    if (!_appSettings.IsIncognitoMode && !string.IsNullOrWhiteSpace(title) && !title.Contains("about:blank", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _browserHistoryService.AddEntry(title, pageUrl);
+                    }
+                }
+
+                if (isVideo && !string.IsNullOrWhiteSpace(vidUrl))
+                {
+                    _lastDetectedVideoUrl = vidUrl;
+                    _lastDetectedVideoTitle = string.IsNullOrWhiteSpace(title) ? "Video detectado" : title;
+                    BrowserDetectedVideoTitleText.Text = _lastDetectedVideoTitle;
+                    if (_currentBrowserSubView == BrowserSubView.WebView)
+                        BrowserVideoDetectionBar.Visibility = Visibility.Visible;
+                }
+
+                if (msgType == "CHASCLIP_FAB_DOWNLOAD")
+                {
+                    if (_selectedBrowserMediaItem != null || _browserDetectedMediaList.Count > 0)
+                    {
+                        var picked = _selectedBrowserMediaItem ?? _browserDetectedMediaList[0];
+                        OpenVideoDownloadModal(picked.StreamUrl, picked.Title, picked);
+                    }
+                    else if (isVideo && !string.IsNullOrWhiteSpace(vidUrl))
+                    {
+                        OpenVideoDownloadModal(vidUrl, title ?? "Video detectado");
+                    }
+                    else
+                    {
+                        // Intentar con el escaneo directo por si acaso
+                        BrowserFloatingDownloadButton_Click(this, null!);
+                    }
+                }
+            });
+        }
+        catch { }
+    }
+
+    private void BrowserWebView_SourceChanged(object? sender, CoreWebView2SourceChangedEventArgs e)
+    {
+        if (BrowserWebView.Source != null)
+        {
+            var url = BrowserWebView.Source.ToString();
+            if (!url.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            {
+                BrowserUrlTextBox.Text = url;
+                ClearDetectedMediaForNewPage(url);
+            }
+            CheckAndDetectVideoInCurrentPage();
+        }
+    }
+
+    private void BrowserWebView_HistoryChanged(object? sender, object e)
+    {
+        if (BrowserWebView.Source != null)
+        {
+            var url = BrowserWebView.Source.ToString();
+            if (!url.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            {
+                BrowserUrlTextBox.Text = url;
+                var docTitle = BrowserWebView.CoreWebView2?.DocumentTitle;
+                if (!_appSettings.IsIncognitoMode && !string.IsNullOrWhiteSpace(docTitle) && !docTitle.Contains("about:blank", StringComparison.OrdinalIgnoreCase))
+                {
+                    _browserHistoryService.AddEntry(docTitle, url);
+                }
+            }
+            CheckAndDetectVideoInCurrentPage();
+        }
+    }
+
+    private void BrowserWebView_DocumentTitleChanged(object? sender, object e)
+    {
+        if (BrowserWebView.Source != null && BrowserWebView.CoreWebView2 != null)
+        {
+            var url = BrowserWebView.Source.ToString();
+            var docTitle = BrowserWebView.CoreWebView2.DocumentTitle;
+            if (!url.StartsWith("about:", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(docTitle) &&
+                !docTitle.Contains("about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_appSettings.IsIncognitoMode)
+                {
+                    _browserHistoryService.AddEntry(docTitle, url);
+                }
+            }
+            CheckAndDetectVideoInCurrentPage();
+        }
+    }
+
+    private async void BrowserWebView_NavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (e.IsSuccess && BrowserWebView.Source != null && BrowserWebView.CoreWebView2 != null)
+        {
+            var url = BrowserWebView.Source.ToString();
+            if (!url.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            {
+                BrowserUrlTextBox.Text = url;
+                var docTitle = BrowserWebView.CoreWebView2.DocumentTitle;
+                if (string.IsNullOrWhiteSpace(docTitle) || docTitle.Contains("about:blank", StringComparison.OrdinalIgnoreCase))
+                {
+                    docTitle = url;
+                }
+                if (!_appSettings.IsIncognitoMode)
+                {
+                    _browserHistoryService.AddEntry(docTitle, url);
+                }
+            }
+
+            try
+            {
+                await BrowserWebView.CoreWebView2.ExecuteScriptAsync(BuildBrowserFloatingDownloadButtonScript());
+            }
+            catch { }
+
+            await Task.Delay(500);
+            CheckAndDetectVideoInCurrentPage();
+        }
+    }
+
+    private async void CheckAndDetectVideoInCurrentPage()
+    {
+        try
+        {
+            if (BrowserWebView.CoreWebView2 == null) return;
+            var currentUrl = BrowserWebView.Source?.ToString() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(currentUrl) || currentUrl.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            {
+                BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            // Si el sniffer de red estilo Video DownloadHelper ya capturó un flujo multimedia en esta página:
+            if (_selectedBrowserMediaItem != null)
+            {
+                _lastDetectedVideoUrl = _selectedBrowserMediaItem.StreamUrl;
+                _lastDetectedVideoTitle = _selectedBrowserMediaItem.Title;
+                BrowserDetectedVideoTitleText.Text = $"[{_selectedBrowserMediaItem.StreamTypeLabel}] {_lastDetectedVideoTitle}";
+                if (_currentBrowserSubView == BrowserSubView.WebView)
+                    BrowserVideoDetectionBar.Visibility = Visibility.Visible;
+                return;
+            }
+
+            bool isVideoPlatform = currentUrl.Contains("youtube.com/watch", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("youtu.be/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("youtube.com/shorts/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("tiktok.com/@", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("instagram.com/reel/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("instagram.com/p/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("twitch.tv/videos/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("dailymotion.com/video/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("reddit.com/r/", StringComparison.OrdinalIgnoreCase) ||
+                                   currentUrl.Contains("vimeo.com/", StringComparison.OrdinalIgnoreCase) ||
+                                   (currentUrl.Contains("x.com/", StringComparison.OrdinalIgnoreCase) && currentUrl.Contains("/status/", StringComparison.OrdinalIgnoreCase)) ||
+                                   (currentUrl.Contains("facebook.com/", StringComparison.OrdinalIgnoreCase) && (currentUrl.Contains("/watch", StringComparison.OrdinalIgnoreCase) || currentUrl.Contains("/reel", StringComparison.OrdinalIgnoreCase)));
+
+            var pageTitle = BrowserWebView.CoreWebView2.DocumentTitle;
+            if (string.IsNullOrWhiteSpace(pageTitle) || pageTitle.Contains("about:blank", StringComparison.OrdinalIgnoreCase))
+            {
+                pageTitle = "Video en " + (Uri.TryCreate(currentUrl, UriKind.Absolute, out var u) ? u.Host : "página web");
+            }
+            else
+            {
+                pageTitle = pageTitle.Replace(" - YouTube", "", StringComparison.OrdinalIgnoreCase).Trim();
+            }
+
+            if (isVideoPlatform)
+            {
+                _lastDetectedVideoUrl = currentUrl;
+                _lastDetectedVideoTitle = pageTitle;
+                BrowserDetectedVideoTitleText.Text = pageTitle;
+                if (_currentBrowserSubView == BrowserSubView.WebView)
+                    BrowserVideoDetectionBar.Visibility = Visibility.Visible;
+                return;
+            }
+
+            var jsCheck = @"(() => {
+                const v = document.querySelector('video');
+                if (v) return v.currentSrc || v.src || location.href;
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                for (const f of iframes) {
+                    const s = f.src || '';
+                    if (s.includes('player') || s.includes('embed') || s.includes('video') || s.includes('m3u8')) return s;
+                }
+                return '';
+            })()";
+            var raw = await BrowserWebView.CoreWebView2.ExecuteScriptAsync(jsCheck);
+            var result = (raw ?? string.Empty).Trim().Trim('"');
+
+            if (!string.IsNullOrWhiteSpace(result) && result != "null" && result.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                _lastDetectedVideoUrl = result;
+                _lastDetectedVideoTitle = pageTitle;
+                BrowserDetectedVideoTitleText.Text = pageTitle;
+                if (_currentBrowserSubView == BrowserSubView.WebView)
+                    BrowserVideoDetectionBar.Visibility = Visibility.Visible;
+            }
+            else if (_browserDetectedMediaList.Count == 0)
+            {
+                BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch
+        {
+            if (_browserDetectedMediaList.Count == 0)
+                BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OpenVideoDownloadModal(string videoUrl, string videoTitle, BrowserDetectedMediaItem? detectedMedia = null)
+    {
+        _lastDetectedVideoUrl = videoUrl;
+        _lastDetectedVideoTitle = videoTitle;
+        _selectedBrowserMediaItem = detectedMedia;
+
+        SnaptubeModalTitleText.Text = videoTitle;
+        SnaptubeModalUrlText.Text = videoUrl;
+
+        if (detectedMedia != null)
+        {
+            SnaptubeModalStreamBadgeText.Text = detectedMedia.StreamTypeLabel;
+        }
+        else if (videoUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) || videoUrl.Contains("/m3u8/", StringComparison.OrdinalIgnoreCase))
+        {
+            SnaptubeModalStreamBadgeText.Text = "HLS";
+        }
+        else
+        {
+            SnaptubeModalStreamBadgeText.Text = "WEB";
+        }
+
+        if (_browserDetectedMediaList.Count > 1)
+        {
+            SnaptubeModalStreamsPanel.Visibility = Visibility.Visible;
+            SnaptubeModalStreamsComboBox.ItemsSource = null;
+            SnaptubeModalStreamsComboBox.ItemsSource = _browserDetectedMediaList;
+            SnaptubeModalStreamsComboBox.SelectedItem = detectedMedia ?? _browserDetectedMediaList.FirstOrDefault();
+        }
+        else
+        {
+            SnaptubeModalStreamsPanel.Visibility = Visibility.Collapsed;
+        }
+
+        SnaptubeModalQualityComboBox.ItemsSource = QualityOption.DefaultOptions;
+        SnaptubeModalQualityComboBox.SelectedIndex = 0;
+
+        SnaptubeDownloadModalOverlay.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
+    }
+
+    private void SnaptubeModalStreamsComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (SnaptubeModalStreamsComboBox.SelectedItem is BrowserDetectedMediaItem item)
+        {
+            _selectedBrowserMediaItem = item;
+            _lastDetectedVideoUrl = item.StreamUrl;
+            _lastDetectedVideoTitle = item.Title;
+            SnaptubeModalTitleText.Text = item.Title;
+            SnaptubeModalUrlText.Text = item.StreamUrl;
+            SnaptubeModalStreamBadgeText.Text = item.StreamTypeLabel;
+        }
+    }
+
+    private void BrowserDownloadDetectedButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selectedBrowserMediaItem != null)
+        {
+            OpenVideoDownloadModal(_selectedBrowserMediaItem.StreamUrl, _selectedBrowserMediaItem.Title, _selectedBrowserMediaItem);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_lastDetectedVideoUrl)) return;
+        OpenVideoDownloadModal(_lastDetectedVideoUrl, _lastDetectedVideoTitle ?? "Video detectado");
+    }
+
+    private async void BrowserFloatingDownloadButton_Click(object sender, MouseButtonEventArgs? e)
+    {
+        if (BrowserWebView.CoreWebView2 == null ||
+            BrowserWebView.Source == null ||
+            BrowserWebView.Source.ToString().StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowBrowserToast("Abre un portal y entra a un video antes de descargar.", isError: true);
+            return;
+        }
+
+        var currentUrl = BrowserWebView.Source.ToString();
+
+        // 1. Si el sniffer de red estilo Video DownloadHelper ya capturó uno o más flujos multimedia:
+        if (_selectedBrowserMediaItem != null || _browserDetectedMediaList.Count > 0)
+        {
+            var item = _selectedBrowserMediaItem ?? _browserDetectedMediaList[0];
+            OpenVideoDownloadModal(item.StreamUrl, item.Title, item);
+            return;
+        }
+
+        // 2. Verificar si la URL actual ya es un video conocido
+        if (!string.IsNullOrWhiteSpace(_lastDetectedVideoUrl) &&
+            (currentUrl.Contains("youtube.com/watch", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("youtu.be/", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("youtube.com/shorts/", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("tiktok.com", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("instagram.com", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("twitch.tv", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("dailymotion.com", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Contains("reddit.com", StringComparison.OrdinalIgnoreCase) ||
+             currentUrl.Equals(_lastDetectedVideoUrl, StringComparison.OrdinalIgnoreCase)))
+        {
+            OpenVideoDownloadModal(_lastDetectedVideoUrl, _lastDetectedVideoTitle ?? "Video detectado");
+            return;
+        }
+
+        // 3. Ejecutar análisis en el DOM para encontrar video funcional o reproductor incrustado
+        try
+        {
+            var script = @"(() => {
+                const loc = window.location.href;
+                if (loc.includes('youtube.com/watch') || loc.includes('youtu.be/') || loc.includes('youtube.com/shorts/')) {
+                    return JSON.stringify({
+                        found: true,
+                        url: loc,
+                        title: (document.title || 'Video de YouTube').replace(' - YouTube', '').trim()
+                    });
+                }
+                const v = document.querySelector('video');
+                if (v) {
+                    const src = v.currentSrc || v.src || '';
+                    return JSON.stringify({
+                        found: true,
+                        url: (src && !src.startsWith('blob:')) ? src : loc,
+                        title: document.title || 'Video Web'
+                    });
+                }
+                const iframes = Array.from(document.querySelectorAll('iframe'));
+                for (const f of iframes) {
+                    const s = f.src || '';
+                    if (s.includes('player') || s.includes('embed') || s.includes('video') || s.includes('m3u8')) {
+                        return JSON.stringify({
+                            found: true,
+                            url: s,
+                            title: document.title || 'Video Web'
+                        });
+                    }
+                }
+                if (/tiktok\.com\/@.*\/video/i.test(loc) || /instagram\.com\/(p|reel)\//i.test(loc) || /twitch\.tv\/videos\//i.test(loc) || /dailymotion\.com\/video\//i.test(loc) || /reddit\.com\/r\//i.test(loc) || /x\.com\/.*\/status\//i.test(loc) || /twitter\.com\/.*\/status\//i.test(loc)) {
+                    return JSON.stringify({
+                        found: true,
+                        url: loc,
+                        title: document.title || 'Video Web'
+                    });
+                }
+                return JSON.stringify({ found: false });
+            })()";
+
+            var rawResult = await BrowserWebView.CoreWebView2.ExecuteScriptAsync(script);
+            if (!string.IsNullOrWhiteSpace(rawResult) && rawResult != "null")
+            {
+                var jsonStr = JsonSerializer.Deserialize<string>(rawResult) ?? rawResult;
+                using var doc = JsonDocument.Parse(jsonStr);
+                if (doc.RootElement.TryGetProperty("found", out var foundProp) && foundProp.GetBoolean())
+                {
+                    var vidUrl = doc.RootElement.GetProperty("url").GetString() ?? currentUrl;
+                    var vidTitle = doc.RootElement.GetProperty("title").GetString() ?? "Video Web";
+                    OpenVideoDownloadModal(vidUrl, vidTitle);
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[FloatingDownload] Error: {ex.Message}");
+        }
+
+        ShowBrowserToast("No se detectó ningún video en reproducción. Entra a un video primero.", isError: true);
+    }
+
+    private void BrowserDismissDetection_Click(object sender, RoutedEventArgs e)
+    {
+        BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+    }
+
+    private void SnaptubeModalFormat_Checked(object sender, RoutedEventArgs e)
+    {
+        if (SnaptubeModalQualityPanel == null) return;
+        bool isAudio = SnaptubeModalAudioRadio.IsChecked == true;
+        SnaptubeModalQualityPanel.Visibility = isAudio ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void CloseSnaptubeDownloadModal_Click(object sender, RoutedEventArgs e)
+    {
+        SnaptubeDownloadModalOverlay.Visibility = Visibility.Collapsed;
+        RefreshWebViewAirspace();
+    }
+
+    private void ConfirmSnaptubeDownload_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_lastDetectedVideoUrl) && _selectedBrowserMediaItem == null)
+        {
+            SnaptubeDownloadModalOverlay.Visibility = Visibility.Collapsed;
+            RefreshWebViewAirspace();
+            return;
+        }
+
+        bool isAudio = SnaptubeModalAudioRadio.IsChecked == true;
+        var selectedQuality = SnaptubeModalQualityComboBox.SelectedItem as QualityOption
+                              ?? QualityOption.DefaultOptions[0];
+
+        var detected = _selectedBrowserMediaItem;
+        string effectiveUrl = detected?.StreamUrl ?? _lastDetectedVideoUrl!;
+        string effectiveTitle = detected?.Title ?? _lastDetectedVideoTitle ?? "Descarga multimedia";
+        string? effectiveReferer = detected?.Referer;
+        string? effectiveOrigin = detected?.Origin;
+        string? effectiveCookies = detected?.Cookies;
+        string? effectivePageUrl = detected?.PageUrl ?? BrowserWebView.Source?.ToString();
+        bool isHls = detected?.IsHls == true ||
+                     effectiveUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                     effectiveUrl.Contains("/m3u8/", StringComparison.OrdinalIgnoreCase) ||
+                     effectiveUrl.Contains("/hls/", StringComparison.OrdinalIgnoreCase);
+
+        _downloadQueueService.Enqueue(
+            effectiveUrl,
+            effectiveTitle,
+            isAudio,
+            isAudio ? "MP3 320k" : selectedQuality.Label,
+            isAudio ? 0 : selectedQuality.TargetHeight,
+            _currentDownloadDirectory,
+            referer: effectiveReferer,
+            origin: effectiveOrigin,
+            cookies: effectiveCookies,
+            pageUrl: effectivePageUrl,
+            isHlsStream: isHls);
+
+        SnaptubeDownloadModalOverlay.Visibility = Visibility.Collapsed;
+        BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+
+        UpdateQueueBadge();
+        ShowBrowserToast("✓ Descarga agregada a la lista de espera");
+        DownloadQueueDrawerOverlay.Visibility = Visibility.Visible;
+        RefreshWebViewAirspace();
+    }
+
+    // ==================== SNIFFER DE RED ESTILO VIDEO DOWNLOADHELPER PARA EL BUSCADOR WEB ====================
+
+    private void AttachBrowserMediaSniffer(CoreWebView2 wv)
+    {
+        wv.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
+
+        wv.WebResourceRequested += (s, args) =>
+        {
+            try
+            {
+                var uri = args.Request?.Uri;
+                if (string.IsNullOrWhiteSpace(uri)) return;
+
+                if (uri.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                    uri.Contains("/m3u8/", StringComparison.OrdinalIgnoreCase) ||
+                    uri.Contains("/m3u8", StringComparison.OrdinalIgnoreCase) ||
+                    uri.Contains("/hls/", StringComparison.OrdinalIgnoreCase) ||
+                    uri.Contains(".mpd", StringComparison.OrdinalIgnoreCase) ||
+                    uri.Contains("/dash/", StringComparison.OrdinalIgnoreCase) ||
+                    Regex.IsMatch(uri, @"\.(mp4|webm|mkv|mov)(\?|$)", RegexOptions.IgnoreCase))
+                {
+                    string? refHeader = null;
+                    string? originHeader = null;
+                    string? cookieHeader = null;
+
+                    try
+                    {
+                        if (args.Request!.Headers.Contains("Referer"))
+                            refHeader = args.Request.Headers.GetHeader("Referer");
+                        if (args.Request.Headers.Contains("Origin"))
+                            originHeader = args.Request.Headers.GetHeader("Origin");
+                        if (args.Request.Headers.Contains("Cookie"))
+                            cookieHeader = args.Request.Headers.GetHeader("Cookie");
+                    }
+                    catch { }
+
+                    RegisterDetectedMediaStream(uri, refHeader, originHeader, cookieHeader, contentType: null, contentLength: null);
+                }
+            }
+            catch { }
+        };
+
+        wv.WebResourceResponseReceived += (s, args) =>
+        {
+            try
+            {
+                var uri = args.Request?.Uri;
+                if (string.IsNullOrWhiteSpace(uri)) return;
+
+                var respHeaders = args.Response?.Headers;
+                if (respHeaders == null) return;
+
+                string? contentType = null;
+                long? contentLength = null;
+
+                try
+                {
+                    if (respHeaders.Contains("Content-Type"))
+                        contentType = respHeaders.GetHeader("Content-Type");
+
+                    if (respHeaders.Contains("Content-Length") &&
+                        long.TryParse(respHeaders.GetHeader("Content-Length"), out var cl))
+                    {
+                        contentLength = cl;
+                    }
+                }
+                catch { }
+
+                if (!string.IsNullOrWhiteSpace(contentType))
+                {
+                    bool isMediaContent = contentType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) ||
+                                          contentType.Contains("dash", StringComparison.OrdinalIgnoreCase) ||
+                                          contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase);
+
+                    if (isMediaContent)
+                    {
+                        string? refHeader = null;
+                        string? originHeader = null;
+                        string? cookieHeader = null;
+
+                        try
+                        {
+                            if (args.Request!.Headers.Contains("Referer"))
+                                refHeader = args.Request.Headers.GetHeader("Referer");
+                            if (args.Request.Headers.Contains("Origin"))
+                                originHeader = args.Request.Headers.GetHeader("Origin");
+                            if (args.Request.Headers.Contains("Cookie"))
+                                cookieHeader = args.Request.Headers.GetHeader("Cookie");
+                        }
+                        catch { }
+
+                        RegisterDetectedMediaStream(uri, refHeader, originHeader, cookieHeader, contentType, contentLength);
+                    }
+                }
+            }
+            catch { }
+        };
+    }
+
+    private void RegisterDetectedMediaStream(
+        string streamUrl,
+        string? referer,
+        string? origin,
+        string? cookies,
+        string? contentType,
+        long? contentLength)
+    {
+        if (string.IsNullOrWhiteSpace(streamUrl)) return;
+        if (streamUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+            streamUrl.StartsWith("blob:", StringComparison.OrdinalIgnoreCase) ||
+            streamUrl.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (IsAdOrTrackerUrl(streamUrl) || IsStaticWebAsset(streamUrl))
+            return;
+
+        bool isHls = streamUrl.Contains(".m3u8", StringComparison.OrdinalIgnoreCase) ||
+                     streamUrl.Contains("/m3u8/", StringComparison.OrdinalIgnoreCase) ||
+                     streamUrl.Contains("/m3u8", StringComparison.OrdinalIgnoreCase) ||
+                     streamUrl.Contains("/hls/", StringComparison.OrdinalIgnoreCase) ||
+                     (contentType != null && (contentType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase) ||
+                                              contentType.Contains("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase)));
+
+        bool isDash = streamUrl.Contains(".mpd", StringComparison.OrdinalIgnoreCase) ||
+                      streamUrl.Contains("/dash/", StringComparison.OrdinalIgnoreCase) ||
+                      (contentType != null && contentType.Contains("dash", StringComparison.OrdinalIgnoreCase));
+
+        bool isDirectVideo = Regex.IsMatch(streamUrl, @"\.(mp4|webm|mkv|mov|m4v)(\?|$)", RegexOptions.IgnoreCase) ||
+                             (contentType != null && (contentType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) ||
+                                                      contentType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)));
+
+        if (!isHls && !isDash && !isDirectVideo)
+            return;
+
+        // Descartar chunks numéricos repetitivos si ya capturamos el manifiesto
+        if (!isHls && (streamUrl.Contains("/segs/", StringComparison.OrdinalIgnoreCase) ||
+                       Regex.IsMatch(streamUrl, @"\b(seg|fragment|chunk)[-_0-9]+\.(ts|html|m4s)\b", RegexOptions.IgnoreCase) ||
+                       Regex.IsMatch(streamUrl, @"/\d{3,4}\.(html|ts|m4s)(\?|$)", RegexOptions.IgnoreCase)))
+        {
+            return;
+        }
+
+        string typeLabel = isHls ? "HLS" : (isDash ? "DASH" : (streamUrl.Contains(".webm", StringComparison.OrdinalIgnoreCase) ? "WebM" : "MP4"));
+
+        Dispatcher.InvokeAsync(() =>
+        {
+            try
+            {
+                var pageUrl = BrowserWebView.Source?.ToString() ?? string.Empty;
+                var pageTitle = BrowserWebView.CoreWebView2?.DocumentTitle ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(pageTitle) || pageTitle.Contains("about:blank", StringComparison.OrdinalIgnoreCase))
+                {
+                    pageTitle = Uri.TryCreate(pageUrl, UriKind.Absolute, out var pUri) ? pUri.Host : "Video Web";
+                }
+                else
+                {
+                    pageTitle = pageTitle.Replace(" - YouTube", "", StringComparison.OrdinalIgnoreCase).Trim();
+                }
+
+                lock (_browserDetectedMediaLock)
+                {
+                    var existing = _browserDetectedMediaList.FirstOrDefault(x =>
+                        string.Equals(x.StreamUrl, streamUrl, StringComparison.OrdinalIgnoreCase));
+
+                    if (existing != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(existing.Referer) && !string.IsNullOrWhiteSpace(referer))
+                            existing.Referer = referer;
+                        if (string.IsNullOrWhiteSpace(existing.Origin) && !string.IsNullOrWhiteSpace(origin))
+                            existing.Origin = origin;
+                        return;
+                    }
+
+                    var item = new BrowserDetectedMediaItem
+                    {
+                        StreamUrl = streamUrl,
+                        PageUrl = pageUrl,
+                        Title = pageTitle,
+                        StreamTypeLabel = typeLabel,
+                        IsHls = isHls,
+                        IsDirectMedia = isDirectVideo,
+                        Referer = referer ?? pageUrl,
+                        Origin = origin ?? (Uri.TryCreate(streamUrl, UriKind.Absolute, out var sUri) ? $"{sUri.Scheme}://{sUri.Authority}" : null),
+                        Cookies = cookies,
+                        ContentLengthBytes = contentLength
+                    };
+
+                    _browserDetectedMediaList.Insert(0, item);
+                    _selectedBrowserMediaItem = item;
+                    _lastDetectedVideoUrl = item.StreamUrl;
+                    _lastDetectedVideoTitle = item.Title;
+                }
+
+                BrowserDetectedVideoTitleText.Text = $"[{typeLabel}] {_lastDetectedVideoTitle}";
+                if (_currentBrowserSubView == BrowserSubView.WebView)
+                {
+                    BrowserVideoDetectionBar.Visibility = Visibility.Visible;
+                }
+            }
+            catch { }
+        });
+    }
+
+    private void ClearDetectedMediaForNewPage(string newUrl)
+    {
+        if (string.IsNullOrWhiteSpace(newUrl) || newUrl.StartsWith("about:", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (!string.Equals(_lastBrowserPageUrl, newUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            _lastBrowserPageUrl = newUrl;
+            lock (_browserDetectedMediaLock)
+            {
+                _browserDetectedMediaList.Clear();
+                _selectedBrowserMediaItem = null;
+                _lastDetectedVideoUrl = null;
+                _lastDetectedVideoTitle = null;
+            }
+            BrowserVideoDetectionBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static bool IsAdOrTrackerUrl(string url)
+    {
+        var lower = url.ToLowerInvariant();
+        return lower.Contains("doubleclick") ||
+               lower.Contains("googleads") ||
+               lower.Contains("googlesyndication") ||
+               lower.Contains("adnxs.com") ||
+               lower.Contains("adsystem") ||
+               lower.Contains("pagead") ||
+               lower.Contains("analytics") ||
+               lower.Contains("taboola") ||
+               lower.Contains("outbrain") ||
+               lower.Contains("smartadserver") ||
+               lower.Contains("/advert") ||
+               lower.Contains("/ads/") ||
+               lower.Contains("popads") ||
+               lower.Contains("adcash");
+    }
+
+    private static bool IsStaticWebAsset(string url)
+    {
+        var clean = url.Split('?')[0].ToLowerInvariant();
+        return clean.EndsWith(".js") ||
+               clean.EndsWith(".css") ||
+               clean.EndsWith(".png") ||
+               clean.EndsWith(".jpg") ||
+               clean.EndsWith(".jpeg") ||
+               clean.EndsWith(".gif") ||
+               clean.EndsWith(".webp") ||
+               clean.EndsWith(".svg") ||
+               clean.EndsWith(".ico") ||
+               clean.EndsWith(".woff") ||
+               clean.EndsWith(".woff2") ||
+               clean.EndsWith(".ttf") ||
+               clean.EndsWith(".eot") ||
+               clean.EndsWith(".json");
+    }
+
+    // ==================== HISTORIAL DE NAVEGACIÓN (APARTADO EN PÁGINA APARTE SOLO EN LISTA) ====================
+
+    private void BrowserClearHistory_Click(object sender, RoutedEventArgs e)
+    {
+        _browserHistoryService.ClearAll();
+        if (BrowserHistoryEmptyState != null)
+            BrowserHistoryEmptyState.Visibility = Visibility.Visible;
+    }
+
+    private void BrowserDeleteHistoryItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: BrowserHistoryItem item })
+        {
+            _browserHistoryService.RemoveEntry(item);
+            if (BrowserHistoryEmptyState != null)
+                BrowserHistoryEmptyState.Visibility = _browserHistoryService.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            e.Handled = true;
+        }
+    }
+
+    private void BrowserHistoryItem_Click(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: BrowserHistoryItem item })
+        {
+            BrowserUrlTextBox.Text = item.Url;
+            NavigateBrowserToUrl(item.Url);
+        }
+    }
+
+    private async void ShowBrowserToast(string message, bool isError = false)
+    {
+        _toastCts?.Cancel();
+        _toastCts = new CancellationTokenSource();
+        var ct = _toastCts.Token;
+
+        BrowserToastIconText.Text = isError ? "⚠️" : "✓";
+        BrowserToastText.Text = message;
+        BrowserToastBorder.Visibility = Visibility.Visible;
+
+        try
+        {
+            await Task.Delay(3500, ct);
+            BrowserToastBorder.Visibility = Visibility.Collapsed;
+        }
+        catch (TaskCanceledException) { }
+    }
+
+    // ==================== PANEL LATERAL / CAJÓN DE COLA DE DESCARGAS ====================
+
+    private void ToggleDownloadQueueDrawer_Click(object sender, RoutedEventArgs e)
+    {
+        DownloadQueueDrawerOverlay.Visibility = DownloadQueueDrawerOverlay.Visibility == Visibility.Visible
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        UpdateQueueBadge();
+        RefreshWebViewAirspace();
+    }
+
+    private void CloseDownloadQueueDrawer_Click(object sender, RoutedEventArgs e)
+    {
+        DownloadQueueDrawerOverlay.Visibility = Visibility.Collapsed;
+        RefreshWebViewAirspace();
+    }
+
+    private void OnDownloadQueueChanged()
+    {
+        Dispatcher.Invoke(() =>
+        {
+            UpdateQueueBadge();
+            DownloadQueueEmptyText.Visibility = _downloadQueueService.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        });
+    }
+
+    private void UpdateQueueBadge()
+    {
+        int activeCount = _downloadQueueService.Items.Count(x => x.IsActive);
+        BrowserQueueBadgeBtn.Content = activeCount > 0 ? $"📥 Descargas ({activeCount})" : "📥 Cola de Descargas";
+        DownloadQueueEmptyText.Visibility = _downloadQueueService.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void QueueItemRemoveBtn_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: DownloadQueueItem item })
+        {
+            _downloadQueueService.RemoveItem(item);
+        }
+    }
+
+    private void QueueItemRetry_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: DownloadQueueItem item })
+        {
+            _downloadQueueService.RetryItem(item);
+        }
+    }
+
+    private void QueueItemOpenFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string filePath } && File.Exists(filePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+            }
+            catch { }
+        }
+    }
+
+    private void QueueItemOpenFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: string filePath } && File.Exists(filePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{filePath}\"") { UseShellExecute = true });
+            }
+            catch { }
+        }
+        else
+        {
+            OpenDownloadsFolderBtn_Click(sender, e);
+        }
+    }
+
+    private void ClearCompletedQueueBtn_Click(object sender, RoutedEventArgs e)
+    {
+        _downloadQueueService.ClearCompleted();
+    }
+
+    private void OpenDownloadsFolderBtn_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (Directory.Exists(_currentDownloadDirectory))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_currentDownloadDirectory}\"") { UseShellExecute = true });
+            }
+        }
+        catch { }
     }
 
 }

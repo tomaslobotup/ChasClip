@@ -86,7 +86,8 @@ public partial class VideoCardControl : UserControl
         SubtitleTextBlock.Text = video.SubtitleText;
         SiteBadgeText.Text = video.SourceSiteName;
 
-        var accentBrush = ParseBrush(video.AccentHex, Colors.MediumSlateBlue);
+        var accentColor = AppThemeService.ParseColor(AppThemeService.PaletteNeutralHex, Color.FromRgb(155, 160, 171));
+        var accentBrush = new SolidColorBrush(accentColor);
         SiteAccentDot.Fill = accentBrush;
         PreviewProgressBar.Foreground = accentBrush;
 
@@ -147,7 +148,7 @@ public partial class VideoCardControl : UserControl
             if (!_isHovered || cts.IsCancellationRequested) return;
 
             PreviewStatusText.Text = "⏳ PREVIEW...";
-            PreviewStatusBadge.Background = ParseBrush(video.AccentHex, Color.FromRgb(124, 92, 255), 0.88);
+            PreviewStatusBadge.Background = ParseBrush(AppThemeService.PaletteAccentHex, Color.FromRgb(57, 0, 7), 0.94);
             PreviewStatusBadge.Visibility = Visibility.Visible;
             StartSubtleCoverZoom();
 
@@ -314,9 +315,10 @@ public partial class VideoCardControl : UserControl
         CardScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(targetScale, dur));
         CardScale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(targetScale, dur));
 
-        if (hovered && !string.IsNullOrWhiteSpace(accentHex))
+        if (hovered)
         {
-            CardBorder.BorderBrush = ParseBrush(accentHex, Color.FromRgb(124, 92, 255));
+            CardBorder.BorderBrush = Application.Current?.Resources["AppAccentBorderBrush"] as Brush
+                                     ?? ParseBrush(AppThemeService.PaletteNeutralHex, Color.FromRgb(155, 160, 171));
         }
         else
         {
@@ -346,21 +348,24 @@ public partial class VideoCardControl : UserControl
 
     private void UpdateFavoriteVisual(bool isFav)
     {
+        var cDark = AppThemeService.ParseColor(AppThemeService.PaletteDarkHex, Color.FromRgb(14, 14, 15));
+        var cAccent = AppThemeService.ParseColor(AppThemeService.PaletteAccentHex, Color.FromRgb(57, 0, 7));
+        var cNeutral = AppThemeService.ParseColor(AppThemeService.PaletteNeutralHex, Color.FromRgb(155, 160, 171));
+        var cLight = AppThemeService.ParseColor(AppThemeService.PaletteLightHex, Color.FromRgb(240, 244, 245));
+
         if (FavoriteButton.Template?.FindName("favIcon", FavoriteButton) is TextBlock tb)
         {
             tb.Text = isFav ? "★" : "☆";
-            tb.Foreground = isFav
-                ? new SolidColorBrush(Color.FromRgb(245, 158, 11))
-                : new SolidColorBrush(Color.FromRgb(241, 245, 249));
+            tb.Foreground = new SolidColorBrush(cLight);
         }
         if (FavoriteButton.Template?.FindName("favBd", FavoriteButton) is Border bd)
         {
             bd.BorderBrush = isFav
-                ? new SolidColorBrush(Color.FromRgb(245, 158, 11))
-                : new SolidColorBrush(Color.FromArgb(64, 255, 255, 255));
+                ? new SolidColorBrush(cLight)
+                : new SolidColorBrush(AppThemeService.WithAlpha(cNeutral, 120));
             bd.Background = isFav
-                ? new SolidColorBrush(Color.FromArgb(220, 30, 24, 16))
-                : new SolidColorBrush(Color.FromArgb(176, 0, 0, 0));
+                ? new SolidColorBrush(AppThemeService.WithAlpha(cAccent, 235))
+                : new SolidColorBrush(AppThemeService.WithAlpha(cDark, 190));
         }
         FavoriteButton.ToolTip = isFav ? "Quitar de favoritos" : "Marcar como favorito";
     }

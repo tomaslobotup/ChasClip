@@ -3,13 +3,13 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <AssemblyName>BUSCAPP</AssemblyName>
+    <AssemblyName>ChasClip</AssemblyName>
     <RootNamespace>BuscadorVideos</RootNamespace>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
     <Version>1.3.0</Version>
-    <Product>BUSCAPP</Product>
+    <Product>ChasClip</Product>
     <Authors>tomaslobotup</Authors>
-    <Description>BUSCAPP — Buscador Multisitio Universal de Videos</Description>
+    <Description>ChasClip — Buscador Multisitio Universal y Descargador de Videos</Description>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\icon.png" />
     <Resource Include="Assets\logo.ico" />
   </ItemGroup>
 
