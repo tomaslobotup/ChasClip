@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ChasClip — Descargador Universal Multimedia Web</title>
+  <link rel="icon" type="image/x-icon" href="assets/logo.ico">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <header class="app-header">
+      <div class="header-brand">
+        <img src="assets/logo.png" alt="ChasClip Logo" class="brand-logo">
+        <div class="brand-info">
+          <span class="brand-name">ChasClip</span>
+          <span class="brand-sub">Descargador Universal Multimedia Web</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnSettings" class="btn-secondary" title="Configurar servidor API">Ajustes</button>
+        <a href="https://github.com/tomaslobotup/ChasClip/releases/latest/download/ChasClip-Setup.exe" class="btn-primary" target="_blank" rel="noopener">
+          Descargar para Windows
+        </a>
+      </div>
+    </header>
+
+    <main class="main-content">
+      <section class="hero-section">
+        <h1 class="hero-title">Buscador y Descargador Multimedia</h1>
+        <p class="hero-subtitle">Ingresa el enlace de un video para reproducirlo o descargarlo en video MP4 o audio MP3.</p>
+
+        <div class="search-box">
+          <input type="text" id="videoUrlInput" class="input-url" placeholder="Pega el enlace de YouTube, TikTok, Twitch, Instagram, Dailymotion o enlace directo..." autocomplete="off">
+          <div class="search-buttons">
+            <button id="btnLoadVideo" class="btn-action">Cargar</button>
+            <button id="btnDownloadMp4" class="btn-action btn-accent">Descargar MP4</button>
+            <button id="btnDownloadMp3" class="btn-action btn-accent">Descargar MP3</button>
+          </div>
+        </div>
+
+        <div id="statusMessage" class="status-message"></div>
+      </section>
+
+      <section class="shortcuts-section">
+        <h2 class="section-title">Portales compatibles</h2>
+        <div class="shortcuts-grid">
+          <button class="shortcut-card" data-url="https://www.youtube.com">
+            <span class="shortcut-dot dot-red"></span>
+            <span class="shortcut-title">YouTube</span>
+          </button>
+          <button class="shortcut-card" data-url="https://www.twitch.tv">
+            <span class="shortcut-dot dot-purple"></span>
+            <span class="shortcut-title">Twitch</span>
+          </button>
+          <button class="shortcut-card" data-url="https://www.tiktok.com">
+            <span class="shortcut-dot dot-cyan"></span>
+            <span class="shortcut-title">TikTok</span>
+          </button>
+          <button class="shortcut-card" data-url="https://www.instagram.com">
+            <span class="shortcut-dot dot-pink"></span>
+            <span class="shortcut-title">Instagram</span>
+          </button>
+          <button class="shortcut-card" data-url="https://www.dailymotion.com">
+            <span class="shortcut-dot dot-blue"></span>
+            <span class="shortcut-title">Dailymotion</span>
+          </button>
+        </div>
+      </section>
+
+      <section id="playerSection" class="player-section hidden">
+        <div class="player-wrapper">
+          <div id="embedContainer" class="embed-container"></div>
+        </div>
+        <div class="player-meta">
+          <h3 id="playerTitle" class="player-title"></h3>
+          <div class="player-actions">
+            <button id="btnDownloadCurrentMp4" class="btn-action btn-accent">Descargar Video</button>
+            <button id="btnDownloadCurrentMp3" class="btn-action btn-accent">Descargar MP3</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="desktop-banner">
+        <div class="banner-content">
+          <h3>ChasClip para Windows</h3>
+          <p>Para descargas de alta velocidad sin limitaciones de navegador, detector de videos en tiempo real y modo incognito, usa la aplicacion de escritorio nativa.</p>
+        </div>
+        <a href="https://github.com/tomaslobotup/ChasClip/releases/latest/download/ChasClip-Setup.exe" class="btn-primary" target="_blank" rel="noopener">
+          Descargar instalador (.exe)
+        </a>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <span>ChasClip Web • Proyecto de codigo abierto</span>
+      <div class="footer-links">
+        <a href="https://github.com/tomaslobotup/ChasClip" target="_blank" rel="noopener">Repositorio en GitHub</a>
+        <a href="https://cafecito.app/atomichead" target="_blank" rel="noopener">Apoyar en Cafecito</a>
+      </div>
+    </footer>
+  </div>
+
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Ajustes de Servidor Backend</h3>
+        <button id="btnCloseModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Por defecto la version web utiliza el servicio de descarga en la nube integrado. Si desplegaste tu propio servidor backend de ChasClip (en Render o Railway), ingresa su URL aqui:</p>
+        <label for="apiUrlInput">URL de la API backend:</label>
+        <input type="text" id="apiUrlInput" class="input-url" placeholder="https://tu-api.onrender.com">
+        <small>Deja este campo vacio para usar el servidor publico por defecto.</small>
+      </div>
+      <div class="modal-footer">
+        <button id="btnSaveSettings" class="btn-primary">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
