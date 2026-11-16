@@ -80,7 +80,7 @@
     return null;
   }
 
-  function loadVideo() {
+  async function loadVideo() {
     const url = videoUrlInput.value.trim();
     if (!url) {
       setStatus("Por favor ingresa un enlace valido.", "error");
@@ -127,6 +127,12 @@
     }
   }
 
+  function setDownloadButtonsState(disabled) {
+    [btnDownloadMp4, btnDownloadMp3, btnDownloadCurrentMp4, btnDownloadCurrentMp3].forEach((btn) => {
+      if (btn) btn.disabled = disabled;
+    });
+  }
+
   async function triggerDownload(format = "mp4") {
     const url = videoUrlInput.value.trim();
     if (!url) {
@@ -134,20 +140,55 @@
       return;
     }
 
+    setDownloadButtonsState(true);
+    setStatus(`Descargando ${format.toUpperCase()}... Por favor espera un momento mientras el servidor procesa el archivo.`, "info");
+
     const backend = getBackendUrl();
 
-    // 1) Si hay backend conectado (por defecto ChasClip API en Render)
+    // 1) Intentar mediante el backend de ChasClip API (Render)
     if (backend) {
-      setStatus(`Procesando descarga en formato ${format.toUpperCase()}...`, "info");
-      const downloadUrl = `${backend.replace(/\/+$/, "")}/api/download?url=${encodeURIComponent(url)}&format=${format}`;
-      const a = document.createElement("a");
-      a.href = downloadUrl;
-      a.target = "_blank";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setStatus("Peticion de descarga enviada. Si el video es largo, el servidor puede tardar unos segundos en procesar el archivo.", "success");
-      return;
+      try {
+        const downloadUrl = `${backend.replace(/\/+$/, "")}/api/download?url=${encodeURIComponent(url)}&format=${format}`;
+        const res = await fetch(downloadUrl);
+
+        if (!res.ok) {
+          let errorMsg = `Error del servidor (${res.status})`;
+          try {
+            const errJson = await res.json();
+            if (errJson && errJson.detail) errorMsg = errJson.detail;
+          } catch (_) {
+            const errText = await res.text();
+            if (errText) errorMsg = errText;
+          }
+          throw new Error(errorMsg);
+        }
+
+        // Obtener nombre del archivo del header o generar uno
+        let filename = `ChasClip_${Date.now()}.${format}`;
+        const disposition = res.headers.get("Content-Disposition");
+        if (disposition) {
+          const match = /filename\*?=['"]?(?:UTF-\d['"]*)?([^;\r\n"']*)['"]?/i.exec(disposition);
+          if (match && match[1]) {
+            filename = decodeURIComponent(match[1]);
+          }
+        }
+
+        const blob = await res.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const tempLink = document.createElement("a");
+        tempLink.href = blobUrl;
+        tempLink.download = filename;
+        document.body.appendChild(tempLink);
+        tempLink.click();
+        document.body.removeChild(tempLink);
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
+
+        setStatus(`Descarga completada con éxito: ${filename}`, "success");
+        setDownloadButtonsState(false);
+        return;
+      } catch (err) {
+        console.warn("Error en backend propio, intentando fallback:", err);
+      }
     }
 
     // 2) Si es un enlace directo de video o audio
@@ -160,11 +201,12 @@
       a.click();
       document.body.removeChild(a);
       setStatus("Descarga iniciada directamente desde el origen.", "success");
+      setDownloadButtonsState(false);
       return;
     }
 
     // 3) Resolver mediante instancias de alta disponibilidad
-    setStatus(`Procesando descarga de ${format.toUpperCase()} mediante el servicio en la nube...`, "info");
+    setStatus(`Intentando procesar descarga de ${format.toUpperCase()} mediante servidores alternativos...`, "info");
 
     for (const resolver of PUBLIC_RESOLVERS) {
       try {
@@ -195,17 +237,18 @@
             a.click();
             document.body.removeChild(a);
             setStatus(`Descarga de ${format.toUpperCase()} generada exitosamente.`, "success");
+            setDownloadButtonsState(false);
             return;
           }
         }
       } catch (e) {
-        // Continuar con el siguiente resolver
       }
     }
 
-    // Si no se pudo procesar en la web por restricciones de plataforma
+    // Si falló todo
+    setDownloadButtonsState(false);
     setStatus(
-      "Esta plataforma requiere descargar desde la aplicacion de escritorio ChasClip para saltar restricciones del navegador. Descarga el instalador mas abajo.",
+      "No se pudo completar la descarga en la web debido a bloqueos de la plataforma. Para descargar sin limitaciones, utiliza la aplicación de escritorio ChasClip para Windows.",
       "error"
     );
   }

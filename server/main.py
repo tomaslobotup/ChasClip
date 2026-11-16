@@ -15,6 +15,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "chasclip_server_downloads")
@@ -43,9 +44,11 @@ def get_info(url: str = Query(..., description="URL del video")):
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "geo_bypass": True,
+        "nocheckcertificate": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"]
+                "player_client": ["android", "ios"]
             }
         },
     }
@@ -77,7 +80,7 @@ def download_media(
 
     common_extractor_args = {
         "youtube": {
-            "player_client": ["android", "web"]
+            "player_client": ["android", "ios"]
         }
     }
 
@@ -86,6 +89,8 @@ def download_media(
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": out_template,
+            "geo_bypass": True,
+            "nocheckcertificate": True,
             "extractor_args": common_extractor_args,
             "postprocessors": [
                 {
@@ -102,6 +107,8 @@ def download_media(
         ydl_opts = {
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "outtmpl": out_template,
+            "geo_bypass": True,
+            "nocheckcertificate": True,
             "extractor_args": common_extractor_args,
             "merge_output_format": "mp4",
             "quiet": True,
