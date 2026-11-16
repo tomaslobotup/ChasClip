@@ -11,13 +11,6 @@
   const playerTitle = document.getElementById("playerTitle");
   const shortcutButtons = document.querySelectorAll(".shortcut-card");
 
-  // Modal de Ajustes
-  const btnSettings = document.getElementById("btnSettings");
-  const settingsModal = document.getElementById("settingsModal");
-  const btnCloseModal = document.getElementById("btnCloseModal");
-  const btnSaveSettings = document.getElementById("btnSaveSettings");
-  const apiUrlInput = document.getElementById("apiUrlInput");
-
   const DEFAULT_BACKEND_URL = "https://chasclip.onrender.com";
 
   // Instancias públicas de fallback para extracción sin backend propio
@@ -236,33 +229,6 @@
       videoUrlInput.focus();
       setStatus(`Pega el enlace del video que desees de ${btn.querySelector(".shortcut-title").textContent}.`, "info");
     });
-  });
-
-  // Modal
-  btnSettings.addEventListener("click", () => {
-    apiUrlInput.value = getBackendUrl();
-    settingsModal.classList.remove("hidden");
-  });
-
-  btnCloseModal.addEventListener("click", () => {
-    settingsModal.classList.add("hidden");
-  });
-
-  btnSaveSettings.addEventListener("click", () => {
-    const val = apiUrlInput.value.trim();
-    localStorage.setItem("chasclip_backend_url", val);
-    settingsModal.classList.add("hidden");
-    if (val) {
-      setStatus(`Servidor backend guardado: ${val}`, "success");
-    } else {
-      setStatus("Servidor backend restablecido al predeterminado.", "info");
-    }
-  });
-
-  window.addEventListener("click", (e) => {
-    if (e.target === settingsModal) {
-      settingsModal.classList.add("hidden");
-    }
   });
 
   // Resolver enlace dinamico a la ultima release de GitHub

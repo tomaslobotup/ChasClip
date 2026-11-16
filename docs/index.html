@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ChasClip — Descargador Universal Multimedia Web</title>
+  <meta name="description" content="ChasClip es un descargador universal multimedia web y de escritorio para Windows. Descarga videos en MP4 y audio en MP3 de YouTube, TikTok, Twitch, Instagram y más.">
+  <meta name="keywords" content="chasclip, chasclip web, descargador universal multimedia, descargar videos, descargar musica mp3, youtube mp4, youtube mp3, descargador multimedia">
+  <meta name="author" content="tomaslobotup">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://tomaslobotup.github.io/ChasClip/">
   <link rel="icon" type="image/x-icon" href="assets/logo.ico">
   <link rel="stylesheet" href="style.css">
 
@@ -23,13 +28,31 @@
   <meta name="twitter:description" content="Descarga y reproduce videos en MP4 o extrae audio en MP3 directamente desde la web.">
   <meta name="twitter:image" content="https://tomaslobotup.github.io/ChasClip/assets/embed.png?v=1">
   <meta name="theme-color" content="#390007">
+
+  <!-- Datos estructurados Schema.org para Google Search -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "ChasClip",
+    "alternateName": "ChasClip Web",
+    "url": "https://tomaslobotup.github.io/ChasClip/",
+    "description": "Descargador universal multimedia web y de escritorio para Windows. Descarga videos en MP4 y audio en MP3 de plataformas web.",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "All, Windows",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
 </head>
 <body>
   <div class="app-layout">
     <header class="app-header">
       <div class="header-left"></div>
       <div class="header-actions">
-        <button id="btnSettings" class="btn-secondary" title="Configurar servidor API">Ajustes</button>
         <a id="btnDownloadWindowsHeader" href="https://github.com/tomaslobotup/ChasClip/releases/latest/download/ChasClip-Setup.exe" class="btn-primary" target="_blank" rel="noopener">
           Descargar para Windows
         </a>
@@ -114,24 +137,6 @@
         <a href="https://cafecito.app/atomichead" target="_blank" rel="noopener">Apoyar en Cafecito</a>
       </div>
     </footer>
-  </div>
-
-  <div id="settingsModal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3>Ajustes de Servidor Backend</h3>
-        <button id="btnCloseModal" class="btn-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p>Por defecto la version web utiliza el servicio de descarga en la nube integrado. Si desplegaste tu propio servidor backend de ChasClip (en Render o Railway), ingresa su URL aqui:</p>
-        <label for="apiUrlInput">URL de la API backend:</label>
-        <input type="text" id="apiUrlInput" class="input-url" placeholder="https://tu-api.onrender.com">
-        <small>Deja este campo vacio para usar el servidor publico por defecto.</small>
-      </div>
-      <div class="modal-footer">
-        <button id="btnSaveSettings" class="btn-primary">Guardar</button>
-      </div>
-    </div>
   </div>
 
   <script src="app.js"></script>
