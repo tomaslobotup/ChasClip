@@ -4,7 +4,7 @@
 [![.NET](https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Cafecito](https://img.shields.io/badge/Apoyar-Cafecito%20☕-FF813F)](https://cafecito.app/atomichead)
 
-**ChasClip** es un software de escritorio para Windows desarrollado en **C# (.NET 8 WPF)** que funciona como un **Descargador Universal Multimedia**, reproductor integrado y navegador web especializado. Permite detectar y descargar videos o audios en MP3
+**ChasClip** es un software de escritorio para Windows desarrollado en **C# (.NET 8 WPF)** que funciona como un **Descargador Universal Multimedia**, reproductor integrado y navegador web especializado. Permite detectar y descargar videos o audios.
 
 ## ⬇️ Descarga e Instalación
 
