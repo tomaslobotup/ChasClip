@@ -18,6 +18,8 @@
   const btnSaveSettings = document.getElementById("btnSaveSettings");
   const apiUrlInput = document.getElementById("apiUrlInput");
 
+  const DEFAULT_BACKEND_URL = "https://chasclip.onrender.com";
+
   // Instancias públicas de fallback para extracción sin backend propio
   const PUBLIC_RESOLVERS = [
     "https://api.cobalt.tools",
@@ -25,7 +27,7 @@
   ];
 
   function getBackendUrl() {
-    return (localStorage.getItem("chasclip_backend_url") || "").trim();
+    return (localStorage.getItem("chasclip_backend_url") || DEFAULT_BACKEND_URL).trim();
   }
 
   function setStatus(text, type = "info") {
@@ -113,7 +115,22 @@
       setStatus("Video cargado en el reproductor.", "success");
     } else {
       playerSection.classList.add("hidden");
-      setStatus("Enlace detectado. Puedes proceder con la descarga directa en MP4 o MP3.", "info");
+      setStatus("Enlace detectado. Listo para descargar en MP4 o MP3.", "info");
+    }
+
+    // Consultar título real al backend en segundo plano
+    const backend = getBackendUrl();
+    if (backend) {
+      try {
+        const res = await fetch(`${backend.replace(/\/+$/, "")}/api/info?url=${encodeURIComponent(url)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.title) {
+            playerTitle.textContent = data.title;
+          }
+        }
+      } catch (e) {
+      }
     }
   }
 
@@ -124,14 +141,19 @@
       return;
     }
 
-    const customBackend = getBackendUrl();
+    const backend = getBackendUrl();
 
-    // 1) Si hay backend propio configurado
-    if (customBackend) {
-      setStatus(`Solicitando descarga en formato ${format.toUpperCase()} a tu servidor backend...`, "info");
-      const downloadUrl = `${customBackend.replace(/\/+$/, "")}/api/download?url=${encodeURIComponent(url)}&format=${format}`;
-      window.open(downloadUrl, "_blank");
-      setStatus("Peticion enviada al backend. La descarga comenzara en breve.", "success");
+    // 1) Si hay backend conectado (por defecto ChasClip API en Render)
+    if (backend) {
+      setStatus(`Procesando descarga en formato ${format.toUpperCase()}...`, "info");
+      const downloadUrl = `${backend.replace(/\/+$/, "")}/api/download?url=${encodeURIComponent(url)}&format=${format}`;
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus("Peticion de descarga enviada. Si el video es largo, el servidor puede tardar unos segundos en procesar el archivo.", "success");
       return;
     }
 

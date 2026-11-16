@@ -43,6 +43,11 @@ def get_info(url: str = Query(..., description="URL del video")):
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        },
     }
 
     try:
@@ -70,11 +75,18 @@ def download_media(
 
     req_id = str(uuid.uuid4())[:8]
 
+    common_extractor_args = {
+        "youtube": {
+            "player_client": ["android", "web"]
+        }
+    }
+
     if format.lower() == "mp3":
         out_template = os.path.join(TEMP_DIR, f"{req_id}_%(title)s.%(ext)s")
         ydl_opts = {
             "format": "bestaudio/best",
             "outtmpl": out_template,
+            "extractor_args": common_extractor_args,
             "postprocessors": [
                 {
                     "key": "FFmpegExtractAudio",
@@ -90,6 +102,7 @@ def download_media(
         ydl_opts = {
             "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
             "outtmpl": out_template,
+            "extractor_args": common_extractor_args,
             "merge_output_format": "mp4",
             "quiet": True,
             "no_warnings": True,
