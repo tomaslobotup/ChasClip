@@ -8,10 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY server/requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+COPY server/main.py main.py
 
 ENV PORT=8000
 EXPOSE 8000
