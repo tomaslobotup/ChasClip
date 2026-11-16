@@ -30,3 +30,7 @@ historial_busquedas.json
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Mapas de codigo de uso personal (excluidos del repositorio)
+MAPA_DEL_CODIGO_IA.md
+MAPA_DEL_CODIGO_IA.txt

@@ -1,23 +1,15 @@
-# ChasClip — Descargador Universal Multimedia
+# ChasClip
 
-[![Plataforma](https://img.shields.io/badge/Windows-10%20%2F%2011%20(64--bit)-0078D6?logo=windows&logoColor=white)](https://github.com/tomaslobotup/BUSCAPP/releases/latest)
-[![.NET](https://img.shields.io/badge/.NET-8.0%20WPF-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
-[![Cafecito](https://img.shields.io/badge/Apoyar-Cafecito%20☕-FF813F)](https://cafecito.app/atomichead)
+Descargador multimedia y reproductor para Windows en C# (.NET 8 WPF). Permite detectar y descargar videos o audios.
 
-**ChasClip** es un software de escritorio para Windows desarrollado en **C# (.NET 8 WPF)** que funciona como un **Descargador Universal Multimedia**, reproductor integrado y navegador web especializado. Permite detectar y descargar videos o audios.
+## Descarga e Instalacion
 
-## ⬇️ Descarga e Instalación
+1. Descarga el instalador desde [Releases](https://github.com/tomaslobotup/ChasClip/releases/latest/download/ChasClip-Setup.exe).
+2. Ejecuta el instalador `ChasClip-Setup.exe` y sigue el asistente.
+3. Abre ChasClip desde el acceso directo en el Escritorio o Menu Inicio.
 
-No necesitas compilar código ni instalar dependencias para usar **ChasClip**:
+Requisito del sistema: Windows 10 o Windows 11 (64 bits).
 
-1. Descarga el instalador desde la sección de [**Releases**](https://github.com/tomaslobotup/BUSCAPP/releases/latest):
-   👉 **[Descargar ChasClip-Setup.exe](https://github.com/tomaslobotup/BUSCAPP/releases/latest/download/ChasClip-Setup.exe)**
-2. Ejecuta el instalador **`ChasClip-Setup.exe`** y sigue el asistente.
-3. Abre **ChasClip** desde el acceso directo creado en tu **Escritorio** o en el **Menú Inicio**.
-> **Requisito del sistema:** Windows 10 o Windows 11 (64-bit)
+## Apoyar el proyecto
 
-## ☕ Apoyar el Proyecto
-
-Si **ChasClip** te resulta útil y quieres apoyar su desarrollo continuo:
-
-👉 **[Invítame un cafecito en cafecito.app/atomichead](https://cafecito.app/atomichead)**
+https://cafecito.app/atomichead
