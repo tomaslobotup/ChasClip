@@ -14,18 +14,7 @@ No necesitas compilar código ni instalar dependencias para usar **ChasClip**:
    👉 **[Descargar ChasClip-Setup.exe](https://github.com/tomaslobotup/BUSCAPP/releases/latest/download/ChasClip-Setup.exe)**
 2. Ejecuta el instalador **`ChasClip-Setup.exe`** y sigue el asistente.
 3. Abre **ChasClip** desde el acceso directo creado en tu **Escritorio** o en el **Menú Inicio**.
-
 > **Requisito del sistema:** Windows 10 o Windows 11 (64-bit)
-
----
-
-## Tecnologías y Arquitectura
-
-* **Lenguaje & Framework:** C# 12 / .NET 8.0 (Windows Presentation Foundation - WPF).
-* **Motor Web:** Microsoft Edge WebView2 (Chromium nativo aislado con WebResource sniffing).
-* **Backend de Descarga y Muxing:** FFmpeg con remuxing multiformato y soporte yt-dlp para plataformas con cifrado DASH.
-
----
 
 ## ☕ Apoyar el Proyecto
 
