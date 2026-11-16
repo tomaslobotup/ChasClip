@@ -242,4 +242,31 @@
       settingsModal.classList.add("hidden");
     }
   });
+
+  // Resolver enlace dinamico a la ultima release de GitHub
+  async function resolveLatestReleaseSetup() {
+    const fallback = "https://github.com/tomaslobotup/ChasClip/releases/latest/download/ChasClip-Setup.exe";
+    try {
+      const res = await fetch("https://api.github.com/repos/tomaslobotup/ChasClip/releases/latest");
+      if (res.ok) {
+        const data = await res.json();
+        const asset = (data.assets || []).find((a) => a.name && a.name.toLowerCase().endsWith(".exe"));
+        if (asset && asset.browser_download_url) {
+          applySetupUrl(asset.browser_download_url);
+          return;
+        }
+      }
+    } catch (e) {
+    }
+    applySetupUrl(fallback);
+  }
+
+  function applySetupUrl(url) {
+    const downloadBtns = document.querySelectorAll("a[href*='download/ChasClip-Setup.exe']");
+    downloadBtns.forEach((btn) => {
+      btn.href = url;
+    });
+  }
+
+  resolveLatestReleaseSetup();
 })();
