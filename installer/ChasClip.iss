@@ -2,7 +2,7 @@
 #define MyAppName "ChasClip"
 #define MyAppVersion "1.3.0"
 #define MyAppPublisher "tomaslobotup"
-#define MyAppURL "https://github.com/tomaslobotup/BUSCAPP"
+#define MyAppURL "https://github.com/tomaslobotup/ChasClip"
 #define MyAppSupportURL "https://cafecito.app/atomichead"
 #define MyAppExeName "ChasClip.exe"
 

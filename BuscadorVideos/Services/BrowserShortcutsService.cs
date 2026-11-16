@@ -39,7 +39,15 @@ public class BrowserShortcutsService
                     var json = File.ReadAllText(_filePath);
                     var list = JsonSerializer.Deserialize<List<BrowserShortcut>>(json, JsonOptions);
                     if (list != null && list.Count > 0)
-                        return list;
+                    {
+                        var filtered = list.Where(s => !IsDeprecatedShortcut(s)).ToList();
+                        if (filtered.Count != list.Count)
+                        {
+                            SaveShortcuts(filtered);
+                        }
+                        if (filtered.Count > 0)
+                            return filtered;
+                    }
                 }
                 catch
                 {
@@ -50,6 +58,16 @@ public class BrowserShortcutsService
             SaveShortcuts(defaults);
             return defaults;
         }
+    }
+
+    private static bool IsDeprecatedShortcut(BrowserShortcut s)
+    {
+        if (s == null) return true;
+        var title = s.Title?.ToLowerInvariant() ?? "";
+        var url = s.Url?.ToLowerInvariant() ?? "";
+        return title.Contains("facebook") || url.Contains("facebook.com") ||
+               title.Contains("twitter") || title.Contains("x / twitter") || url.Contains("x.com") || url.Contains("twitter.com") ||
+               title.Contains("reddit") || url.Contains("reddit.com");
     }
 
     public void SaveShortcuts(List<BrowserShortcut> shortcuts)
@@ -75,10 +93,7 @@ public class BrowserShortcutsService
             new BrowserShortcut { Title = "Twitch", Url = "https://www.twitch.tv", IconEmoji = "🟣", BadgeHex = "#9146FF" },
             new BrowserShortcut { Title = "TikTok", Url = "https://www.tiktok.com", IconEmoji = "⚫", BadgeHex = "#00E5D4" },
             new BrowserShortcut { Title = "Instagram", Url = "https://www.instagram.com", IconEmoji = "🟠", BadgeHex = "#E1306C" },
-            new BrowserShortcut { Title = "Facebook", Url = "https://www.facebook.com/watch", IconEmoji = "🔵", BadgeHex = "#1877F2" },
-            new BrowserShortcut { Title = "X / Twitter", Url = "https://x.com", IconEmoji = "🐦", BadgeHex = "#1D9BF0" },
-            new BrowserShortcut { Title = "Dailymotion", Url = "https://www.dailymotion.com", IconEmoji = "🔷", BadgeHex = "#2F80ED" },
-            new BrowserShortcut { Title = "Reddit", Url = "https://www.reddit.com/r/videos/", IconEmoji = "🟧", BadgeHex = "#FF4500" }
+            new BrowserShortcut { Title = "Dailymotion", Url = "https://www.dailymotion.com", IconEmoji = "🔷", BadgeHex = "#2F80ED" }
         ];
     }
 }
